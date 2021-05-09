@@ -7,6 +7,8 @@ const VERSION = "0.1.0"
 const DEFAULT_PLUGIN_URL = "https://git::@github.com/%s.git"
 const DEFAULT_PLUG_DIR = "res://.plugged"
 const DEFAULT_CONFIG_PATH = DEFAULT_PLUG_DIR + "/index.cfg"
+const DEFAULT_USER_PLUG_SCRIPT_PATH = "res://plug.gd"
+const DEFAULT_BASE_PLUG_SCRIPT_PATH = "res://addons/gd-plug/plug.gd"
 
 const MSG_PLUG_START_ASSERTION = "_plug_start() must be called first"
 
@@ -18,9 +20,30 @@ var _plugged_plugins = {}
 
 
 func _initialize():
+	var args = OS.get_cmdline_args()
+	# Trim unwanted args passed to godot executable
+	for arg in Array(args):
+		args.remove(0)
+		if "plug.gd" in arg:
+			break
+
 	_plug_start()
-	_plugging()
-	_plug_install()
+	if args.size() > 0:
+		_plugging()
+		match args[0]:
+			"init":
+				_plug_init()
+			"install", "update":
+				_plug_install()
+			"upgrade":
+				# TODO: Upgrade gd-plug itself
+				pass
+			"status":
+				_plug_status()
+			"version":
+				print(VERSION)
+			_:
+				print("Unknown command %s" % args[0])
 	quit()
 
 func _finalize():
@@ -50,6 +73,18 @@ func _plug_end():
 	installation_config.save(DEFAULT_CONFIG_PATH)
 	_installed_plugins = null
 
+func _plug_init():
+	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
+	print("Init gd-plug...")
+	var file = File.new()
+	if file.file_exists(DEFAULT_USER_PLUG_SCRIPT_PATH):
+		print("%s already exists!" % DEFAULT_USER_PLUG_SCRIPT_PATH)
+	else:
+		file.open(DEFAULT_USER_PLUG_SCRIPT_PATH, File.WRITE)
+		file.store_string(INIT_PLUG_SCRIPT)
+		file.close()
+		print("Created %s" % DEFAULT_USER_PLUG_SCRIPT_PATH)
+
 func _plug_install():
 	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
 	for plugin in _plugged_plugins.values():
@@ -75,6 +110,23 @@ func _plug_install():
 		if removed:
 			uninstall(plugin)
 			directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH]})
+
+func _plug_status():
+	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
+	print("Installed %d plugin%s" % [_installed_plugins.size(), "s" if _installed_plugins.size() > 1 else ""])
+	var new_plugins = _plugged_plugins.duplicate()
+	for plugin in _installed_plugins.values():
+		print("- {name} - {url}".format(plugin))
+		new_plugins.erase(plugin.name)
+		var removed = not (plugin.name in _plugged_plugins)
+		if removed:
+			print("%s removed" % plugin.name)
+	if new_plugins:
+		print("\nAdded %d plugin%s" % [new_plugins.size(), "s" if new_plugins.size() > 1 else ""])
+		for plugin in new_plugins.values():
+			var is_new = not (plugin.name in _installed_plugins)
+			if is_new:
+				print("- {name} - {url}".format(plugin))
 
 # Index & validate plugin
 func plug(repo, args={}):
@@ -256,3 +308,15 @@ func compare_plugins(p1, p2):
 func get_plugin_name_from_repo(repo):
 	repo = repo.replace(".git", "").trim_suffix("/")
 	return repo.get_file()
+
+const INIT_PLUG_SCRIPT = \
+"""extends "res://addons/gd-plug/plug.gd"
+
+func _plugging():
+	# Declare plugins with plug(repo, args)
+	# For example, clone from github repo("user/repo_name")
+	# plug("imjp94/gd-YAFSM") # By default, gd-plug will only install anything from "addons/" directory
+	# Or you can explicitly specify which file/directory to include
+	# plug("imjp94/gd-YAFSM", {"include": ["addons/"]}) # By default, gd-plug will only install anything from "addons/" directory
+	pass
+"""
