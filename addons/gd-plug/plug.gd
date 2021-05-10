@@ -10,6 +10,8 @@ const DEFAULT_CONFIG_PATH = DEFAULT_PLUG_DIR + "/index.cfg"
 const DEFAULT_USER_PLUG_SCRIPT_PATH = "res://plug.gd"
 const DEFAULT_BASE_PLUG_SCRIPT_PATH = "res://addons/gd-plug/plug.gd"
 
+const ENV_PRODUCTION = "production"
+
 const MSG_PLUG_START_ASSERTION = "_plug_start() must be called first"
 
 var project_dir = Directory.new()
@@ -26,6 +28,13 @@ func _initialize():
 		args.remove(0)
 		if "plug.gd" in arg:
 			break
+
+	for arg in args:
+		# NOTE: "--key" or "-key" will always be consumed by godot executable, see https://github.com/godotengine/godot/issues/8721
+		var key = arg.to_lower()
+		match key:
+			"production":
+				OS.set_environment(ENV_PRODUCTION, "true")
 
 	_plug_start()
 	if args.size() > 0:
@@ -91,38 +100,44 @@ func _plug_install():
 		var global_dest_dir = ProjectSettings.globalize_path(plugin.plug_dir)
 		var installed = plugin.name in _installed_plugins
 		if installed:
-			var installed_plugin = _installed_plugins[plugin.name]
-			var changed_keys = compare_plugins(plugin, installed_plugin)
-			var changed = not changed_keys.empty()
+			if plugin.dev and OS.get_environment(ENV_PRODUCTION):
+				uninstall(_installed_plugins[plugin.name])
+				directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH]})
+			else:
+				var installed_plugin = _installed_plugins[plugin.name]
+				var changed_keys = compare_plugins(plugin, installed_plugin)
+				var changed = not changed_keys.empty()
 
-			var git_executable = GitExecutable.new(global_dest_dir)
-			var should_pull = false
-			var freezed = !!plugin.branch or !!plugin.tag or !!plugin.commit
-			if not freezed:
-				var ahead_behind = []
-				if git_executable.fetch().exit == OK:
-					ahead_behind = git_executable.get_commit_comparison("HEAD", "origin")
-				var is_commit_behind = !!ahead_behind[1] if ahead_behind.size() == 2 else false
-				if is_commit_behind:
-					print("%s behind %d commits, updating plugin..." % [plugin.name, ahead_behind[1]])
-					changed = true
-					should_pull = true
-			if changed:
-				uninstall(installed_plugin)
-				print("%s changed %s" % [plugin.name, changed_keys])
-				var should_clone = "url" in changed_keys or "branch" in changed_keys or "tag" in changed_keys or "commit" in changed_keys
-				if should_pull:
-					if git_executable.pull().exit == OK:
+				var git_executable = GitExecutable.new(global_dest_dir)
+				var should_pull = false
+				var freezed = !!plugin.branch or !!plugin.tag or !!plugin.commit
+				if not freezed:
+					var ahead_behind = []
+					if git_executable.fetch().exit == OK:
+						ahead_behind = git_executable.get_commit_comparison("HEAD", "origin")
+					var is_commit_behind = !!ahead_behind[1] if ahead_behind.size() == 2 else false
+					if is_commit_behind:
+						print("%s behind %d commits, updating plugin..." % [plugin.name, ahead_behind[1]])
+						changed = true
+						should_pull = true
+				if changed:
+					uninstall(installed_plugin)
+					print("%s changed %s" % [plugin.name, changed_keys])
+					var should_clone = "url" in changed_keys or "branch" in changed_keys or "tag" in changed_keys or "commit" in changed_keys
+					if should_pull:
+						if git_executable.pull().exit == OK:
+							install(plugin)
+					elif should_clone:
+						directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH]})
+						if downlaod(plugin) == OK:
+							install(plugin)
+					else:
 						install(plugin)
-				elif should_clone:
-					directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH]})
-					if downlaod(plugin) == OK:
-						install(plugin)
-				else:
-					install(plugin)
 		else:
-			if downlaod(plugin) == OK:
-				install(plugin)
+			var can_install = not OS.get_environment(ENV_PRODUCTION) if plugin.dev else true
+			if can_install:
+				if downlaod(plugin) == OK:
+					install(plugin)
 	for plugin in _installed_plugins.values():
 		var removed = not (plugin.name in _plugged_plugins)
 		if removed:
