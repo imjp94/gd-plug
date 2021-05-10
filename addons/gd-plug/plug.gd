@@ -88,17 +88,35 @@ func _plug_init():
 func _plug_install():
 	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
 	for plugin in _plugged_plugins.values():
+		var global_dest_dir = ProjectSettings.globalize_path(plugin.plug_dir)
 		var installed = plugin.name in _installed_plugins
 		if installed:
 			var installed_plugin = _installed_plugins[plugin.name]
 			var changed_keys = compare_plugins(plugin, installed_plugin)
 			var changed = not changed_keys.empty()
+
+			var git_executable = GitExecutable.new(global_dest_dir)
+			var should_pull = false
+			var freezed = !!plugin.branch or !!plugin.tag or !!plugin.commit
+			if not freezed:
+				var ahead_behind = []
+				if git_executable.fetch().exit == OK:
+					ahead_behind = git_executable.get_commit_comparison("HEAD", "origin")
+				var is_commit_behind = !!ahead_behind[1] if ahead_behind.size() == 2 else false
+				if is_commit_behind:
+					print("%s behind %d commits, updating plugin..." % [plugin.name, ahead_behind[1]])
+					changed = true
+					should_pull = true
 			if changed:
 				uninstall(installed_plugin)
 				print("%s changed %s" % [plugin.name, changed_keys])
-				if "url" in changed_keys:
+				var url_changed = "url" in changed_keys
+				if should_pull:
+					if git_executable.pull().exit == OK:
+						install(plugin)
+				elif url_changed:
 					directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH]})
-					if downlaod(plugin):
+					if downlaod(plugin) == OK:
 						install(plugin)
 				else:
 					install(plugin)
@@ -162,12 +180,11 @@ func downlaod(plugin):
 	if project_dir.dir_exists(plugin.plug_dir):
 		directory_delete_recursively(plugin.plug_dir)
 	project_dir.make_dir(plugin.plug_dir)
-	var output = []
-	var code = OS.execute("git", ["clone", "--depth=1", "--progress", plugin.url, global_dest_dir], true, output)
-	printt(plugin.url, installation_config, code, output, plugin.name)
-	print("Success!" if code == OK else "Failed!")
+	var result = GitExecutable.new(global_dest_dir).clone(plugin.url, global_dest_dir)
+	printt(plugin.url, installation_config, result.exit, result.output, plugin.name)
+	print("Success!" if result.exit == OK else "Failed!")
 	project_dir.remove(plugin.plug_dir) # Remove empty directory
-	return code
+	return result.exit
 
 func install(plugin):
 	var include = plugin.get("include", [])
@@ -320,3 +337,48 @@ func _plugging():
 	# plug("imjp94/gd-YAFSM", {"include": ["addons/"]}) # By default, gd-plug will only install anything from "addons/" directory
 	pass
 """
+
+class GitExecutable extends Reference:
+	var cwd = ""
+
+	func _init(p_cwd):
+		cwd = p_cwd
+
+	func _execute(command, blocking=true, output=[], read_stderr=false):
+		var cmd = "cd %s && %s" % [cwd, command]
+		# NOTE: OS.execute() seems to ignore read_stderr
+		var exit = FAILED
+		match OS.get_name():
+			"Windows":
+				cmd = cmd if read_stderr else "%s 2> nul" % cmd
+				exit = OS.execute("cmd", ["/C", cmd], blocking, output, read_stderr)
+			"X11", "OSX":
+				cmd if read_stderr else "%s 2>/dev/null" % cmd
+				exit = OS.execute("bash", ["-c", cmd], blocking, output, read_stderr)
+			var unhandled_os:
+				push_error("Unexpected OS: %s" % unhandled_os)
+		return exit
+
+	func clone(src, dest):
+		var output = []
+		var exit = _execute("git clone --depth=1 --progress %s %s" % [src, dest], true, output)
+		return {"exit": exit, "output": output}
+
+	func fetch(rm="--all"):
+		var output = []
+		var exit = _execute("git fetch %s" % rm, true, output)
+		return {"exit": exit, "output": output}
+
+	func pull():
+		var output = []
+		var exit = _execute("git pull --rebase", true, output)
+		return {"exit": exit, "output": output}
+
+	func get_commit_comparison(branch_a, branch_b):
+		var output = []
+		var exit = _execute("git rev-list --count --left-right %s...%s" % [branch_a, branch_b], true, output)
+		var raw_ahead_behind = output[0].split("\t")
+		var ahead_behind = []
+		for msg in raw_ahead_behind:
+			ahead_behind.append(int(msg))
+		return ahead_behind if exit == OK else []
