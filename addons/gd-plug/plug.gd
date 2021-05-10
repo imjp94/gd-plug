@@ -110,11 +110,11 @@ func _plug_install():
 			if changed:
 				uninstall(installed_plugin)
 				print("%s changed %s" % [plugin.name, changed_keys])
-				var url_changed = "url" in changed_keys
+				var should_clone = "url" in changed_keys or "branch" in changed_keys or "tag" in changed_keys or "commit" in changed_keys
 				if should_pull:
 					if git_executable.pull().exit == OK:
 						install(plugin)
-				elif url_changed:
+				elif should_clone:
 					directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH]})
 					if downlaod(plugin) == OK:
 						install(plugin)
@@ -359,9 +359,15 @@ class GitExecutable extends Reference:
 				push_error("Unexpected OS: %s" % unhandled_os)
 		return exit
 
-	func clone(src, dest):
+	func clone(src, dest, args={}):
 		var output = []
-		var exit = _execute("git clone --depth=1 --progress %s %s" % [src, dest], true, output)
+		var branch = args.get("branch", "")
+		var tag = args.get("tag", "")
+		var commit = args.get("commit", "")
+		var command = "git clone --depth=1 --progress %s %s" % [src, dest]
+		if branch or tag:
+			command = "git clone --depth=1 --single-branch --branch %s %s %s" % [branch if branch else tag, src, dest]
+		var exit = _execute(command, true, output)
 		return {"exit": exit, "output": output}
 
 	func fetch(rm="--all"):
