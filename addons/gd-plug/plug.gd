@@ -20,6 +20,9 @@ var installation_config = ConfigFile.new()
 var _installed_plugins
 var _plugged_plugins = {}
 
+var _threads = []
+var _mutex = Mutex.new()
+
 
 func _initialize():
 	var args = OS.get_cmdline_args()
@@ -36,6 +39,7 @@ func _initialize():
 			"production":
 				OS.set_environment(ENV_PRODUCTION, "true")
 
+	var start = OS.get_system_time_msecs()
 	_plug_start()
 	if args.size() > 0:
 		_plugging()
@@ -53,6 +57,7 @@ func _initialize():
 				print(VERSION)
 			_:
 				print("Unknown command %s" % args[0])
+	print("Time taken %d" % (OS.get_system_time_msecs() - start))
 	quit()
 
 func _finalize():
@@ -97,52 +102,22 @@ func _plug_init():
 func _plug_install():
 	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
 	for plugin in _plugged_plugins.values():
-		var global_dest_dir = ProjectSettings.globalize_path(plugin.plug_dir)
 		var installed = plugin.name in _installed_plugins
 		if installed:
-			if plugin.dev and OS.get_environment(ENV_PRODUCTION):
-				uninstall(_installed_plugins[plugin.name])
-				directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH]})
+			var installed_plugin = get_installed_plugin(plugin.name)
+			if (installed_plugin.dev or plugin.dev) and OS.get_environment(ENV_PRODUCTION):
+				start_plugin_thread("uninstall_plugin", installed_plugin)
 			else:
-				var installed_plugin = _installed_plugins[plugin.name]
-				var changed_keys = compare_plugins(plugin, installed_plugin)
-				var changed = not changed_keys.empty()
-
-				var git_executable = GitExecutable.new(global_dest_dir)
-				var should_pull = false
-				var freezed = !!plugin.branch or !!plugin.tag or !!plugin.commit
-				if not freezed:
-					var ahead_behind = []
-					if git_executable.fetch().exit == OK:
-						ahead_behind = git_executable.get_commit_comparison("HEAD", "origin")
-					var is_commit_behind = !!ahead_behind[1] if ahead_behind.size() == 2 else false
-					if is_commit_behind:
-						print("%s behind %d commits, updating plugin..." % [plugin.name, ahead_behind[1]])
-						changed = true
-						should_pull = true
-				if changed:
-					uninstall(installed_plugin)
-					print("%s changed %s" % [plugin.name, changed_keys])
-					var should_clone = "url" in changed_keys or "branch" in changed_keys or "tag" in changed_keys or "commit" in changed_keys
-					if should_pull:
-						if git_executable.pull().exit == OK:
-							install(plugin)
-					elif should_clone:
-						directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH]})
-						if downlaod(plugin) == OK:
-							install(plugin)
-					else:
-						install(plugin)
+				start_plugin_thread("update_plugin", plugin)
 		else:
-			var can_install = not OS.get_environment(ENV_PRODUCTION) if plugin.dev else true
-			if can_install:
-				if downlaod(plugin) == OK:
-					install(plugin)
+			start_plugin_thread("install_plugin", plugin)
+	wait_threads()
 	for plugin in _installed_plugins.values():
 		var removed = not (plugin.name in _plugged_plugins)
 		if removed:
-			uninstall(plugin)
-			directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH]})
+			var installed_plugin = get_installed_plugin(plugin.name)
+			start_plugin_thread("uninstall_plugin", installed_plugin)
+	wait_threads()
 
 func _plug_status():
 	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
@@ -190,14 +165,83 @@ func plug(repo, args={}):
 
 	_plugged_plugins[plugin.name] = plugin
 
+func install_plugin(plugin):
+	var can_install = not OS.get_environment(ENV_PRODUCTION) if plugin.dev else true
+	if can_install:
+		if downlaod(plugin) == OK:
+			install(plugin)
+
+func uninstall_plugin(plugin):
+	uninstall(plugin)
+	directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH]})
+
+func update_plugin(plugin):
+	var installed_plugin = get_installed_plugin(plugin.name)
+	var changed_keys = compare_plugins(plugin, installed_plugin)
+	var changed = not changed_keys.empty()
+	var global_dest_dir = ProjectSettings.globalize_path(plugin.plug_dir)
+	var git_executable = GitExecutable.new(global_dest_dir)
+	var should_pull = false
+	var freezed = !!plugin.branch or !!plugin.tag or !!plugin.commit
+	if not freezed:
+		var ahead_behind = []
+		if git_executable.fetch().exit == OK:
+			ahead_behind = git_executable.get_commit_comparison("HEAD", "origin")
+		var is_commit_behind = !!ahead_behind[1] if ahead_behind.size() == 2 else false
+		if is_commit_behind:
+			changed = true
+			should_pull = true
+	if changed:
+		uninstall(installed_plugin)
+		var should_clone = "url" in changed_keys or "branch" in changed_keys or "tag" in changed_keys or "commit" in changed_keys
+		if should_pull:
+			if git_executable.pull().exit == OK:
+				install(plugin)
+		elif should_clone:
+			directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH]})
+			if downlaod(plugin) == OK:
+				install(plugin)
+		else:
+			install(plugin)
+
+func plugin_call(data):
+	var method = data.method
+	var plugin = data.plugin
+	if has_method(method):
+		print("%s %s" % [method.to_upper(), plugin.name])
+		call(method, plugin)
+	else:
+		push_error("Unexpected method called in thread: %s" % method)
+
+func start_plugin_thread(method, plugin):
+	var data = {}
+	data["method"] = method
+	data["plugin"] = plugin
+	return start_thread("plugin_call", data)
+
+func start_thread(method, data):
+	var thread = Thread.new()
+	_threads.append(thread)
+	thread.start(self, method, data)
+	return thread
+
+func wait_threads():
+	for thread in _threads:
+		if thread.is_active():
+			thread.wait_to_finish()
+	_threads.clear()
+
 func downlaod(plugin):
 	var global_dest_dir = ProjectSettings.globalize_path(plugin.plug_dir)
 	if project_dir.dir_exists(plugin.plug_dir):
 		directory_delete_recursively(plugin.plug_dir)
 	project_dir.make_dir(plugin.plug_dir)
-	var result = GitExecutable.new(global_dest_dir).clone(plugin.url, global_dest_dir)
+	var result = GitExecutable.new(global_dest_dir).clone(plugin.url, global_dest_dir, {"branch": plugin.branch, "tag": plugin.tag, "commit": plugin.commit})
 	printt(plugin.url, installation_config, result.exit, result.output, plugin.name)
 	print("Success!" if result.exit == OK else "Failed!")
+	if result.exit != OK:
+		# Make sure plug_dir is clean when failed
+		directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH]})
 	project_dir.remove(plugin.plug_dir) # Remove empty directory
 	return result.exit
 
@@ -207,16 +251,39 @@ func install(plugin):
 		include = ["addons/"]
 	var dest_files = directory_copy_recursively(plugin.plug_dir, "res://", {"include": include, "exclude": plugin.exclude})
 	plugin.dest_files = dest_files
+	set_installed_plugin(plugin)
 	if plugin.on_updated:
 		if has_method(plugin.on_updated):
 			_on_updated(plugin)
 			call(plugin.on_updated, plugin.duplicate())
 			emit_signal("updated", plugin)
-	_installed_plugins[plugin.name] = plugin
 
 func uninstall(plugin):
 	directory_remove_batch(plugin.get("dest_files", []))
-	_installed_plugins.erase(plugin.name)
+	remove_installed_plugin(plugin.name)
+
+# Get installed plugin, thread safe
+func get_installed_plugin(plugin_name):
+	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
+	_mutex.lock()
+	var installed_plugin = _installed_plugins[plugin_name]
+	_mutex.unlock()
+	return installed_plugin
+
+# Set installed plugin, thread safe
+func set_installed_plugin(plugin):
+	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
+	_mutex.lock()
+	_installed_plugins[plugin.name] = plugin
+	_mutex.unlock()
+
+# Remove installed plugin, thread safe
+func remove_installed_plugin(plugin_name):
+	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
+	_mutex.lock()
+	var result = _installed_plugins.erase(plugin_name)
+	_mutex.unlock()
+	return result
 
 func directory_copy_recursively(from, to, args={}):
 	var include = args.get("include", [])
