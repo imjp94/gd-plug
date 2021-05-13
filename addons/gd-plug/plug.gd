@@ -11,6 +11,7 @@ const DEFAULT_USER_PLUG_SCRIPT_PATH = "res://plug.gd"
 const DEFAULT_BASE_PLUG_SCRIPT_PATH = "res://addons/gd-plug/plug.gd"
 
 const ENV_PRODUCTION = "production"
+const ENV_TEST = "test"
 
 const MSG_PLUG_START_ASSERTION = "_plug_start() must be called first"
 
@@ -46,6 +47,8 @@ func _initialize():
 				logger.log_level = Logger.LogLevel.NONE
 			"production":
 				OS.set_environment(ENV_PRODUCTION, "true")
+			"test":
+				OS.set_environment(ENV_TEST, "true")
 
 	logger.debug("cmdline_args: %s" % args)
 	_start_time = OS.get_system_time_msecs()
@@ -95,8 +98,15 @@ func _plug_start():
 # Install plugin or uninstall plugin if unlisted
 func _plug_end():
 	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
-	installation_config.set_value("plugin", "installed", _installed_plugins)
-	installation_config.save(DEFAULT_CONFIG_PATH)
+	var test = !!OS.get_environment(ENV_TEST)
+	if not test:
+		installation_config.set_value("plugin", "installed", _installed_plugins)
+		if installation_config.save(DEFAULT_CONFIG_PATH) == OK:
+			logger.debug("Plugged config saved")
+		else:
+			logger.error("Failed to save plugged config")
+	else:
+		logger.warn("Skipped saving of plugged config in test mode")
 	_installed_plugins = null
 
 func _plug_init():
@@ -189,15 +199,22 @@ func plug(repo, args={}):
 	logger.debug("Plug: %s" % plugin)
 
 func install_plugin(plugin):
+	var test = !!OS.get_environment(ENV_TEST)
 	var can_install = not OS.get_environment(ENV_PRODUCTION) if plugin.dev else true
 	if can_install:
 		logger.info("Installing plugin %s..." % plugin.name)
+		# TODO: Should check & verify if plugin downloaded where test mode run beforehand, so it wouldn't have to download twice
 		if downlaod(plugin) == OK:
 			install(plugin)
+			if test:
+				logger.warn("Remove downloaded plugin in test mode")
+				directory_delete_recursively(plugin.plug_dir)
 
 func uninstall_plugin(plugin):
+	var test = !!OS.get_environment(ENV_TEST)
+	logger.info("Uninstalling plugin %s..." % plugin.name)
 	uninstall(plugin)
-	directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH]})
+	directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH], "test": test})
 
 func update_plugin(plugin):
 	var installed_plugin = get_installed_plugin(plugin.name)
@@ -232,7 +249,8 @@ func update_plugin(plugin):
 		should_clone = should_clone
 		if should_clone:
 			logger.info("%s cloning from %s..." % [plugin.name, plugin.url])
-			directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH]})
+			var test = !!OS.get_environment(ENV_TEST)
+			directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH], "test": test})
 			if downlaod(plugin) == OK:
 				install(plugin)
 		elif should_pull:
@@ -277,6 +295,7 @@ func wait_threads():
 
 func downlaod(plugin):
 	logger.info("Downloading %s from %s..." % [plugin.name, plugin.url])
+	var test = !!OS.get_environment(ENV_TEST)
 	var global_dest_dir = ProjectSettings.globalize_path(plugin.plug_dir)
 	if project_dir.dir_exists(plugin.plug_dir):
 		directory_delete_recursively(plugin.plug_dir)
@@ -287,16 +306,17 @@ func downlaod(plugin):
 	else:
 		logger.info("Failed to download %s" % plugin.name)
 		# Make sure plug_dir is clean when failed
-		directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH]})
+		directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH], "test": test})
 	project_dir.remove(plugin.plug_dir) # Remove empty directory
 	return result.exit
 
 func install(plugin):
 	logger.info("Installing files for %s..." % plugin.name)
+	var test = !!OS.get_environment(ENV_TEST)
 	var include = plugin.get("include", [])
 	if include.empty(): # Auto include "addons/" folder if not explicitly specified
 		include = ["addons/"]
-	var dest_files = directory_copy_recursively(plugin.plug_dir, "res://", {"include": include, "exclude": plugin.exclude})
+	var dest_files = directory_copy_recursively(plugin.plug_dir, "res://", {"include": include, "exclude": plugin.exclude, "test": test})
 	plugin.dest_files = dest_files
 	logger.info("Installed %d file%s for %s" % [dest_files.size(), "s" if dest_files.size() > 1 else "", plugin.name])
 	set_installed_plugin(plugin)
@@ -308,9 +328,10 @@ func install(plugin):
 			emit_signal("updated", plugin)
 
 func uninstall(plugin):
+	var test = !!OS.get_environment(ENV_TEST)
 	var dest_files = plugin.get("dest_files", [])
 	logger.info("Uninstalling %d file%s for %s..." % [dest_files.size(), "s" if dest_files.size() > 1 else "",plugin.name])
-	directory_remove_batch(dest_files)
+	directory_remove_batch(dest_files, {"test": test})
 	logger.info("Uninstalled %d file%s for %s" % [dest_files.size(), "s" if dest_files.size() > 1 else "",plugin.name])
 	remove_installed_plugin(plugin.name)
 
@@ -340,6 +361,8 @@ func remove_installed_plugin(plugin_name):
 func directory_copy_recursively(from, to, args={}):
 	var include = args.get("include", [])
 	var exclude = args.get("exclude", [])
+	var test = args.get("test", false)
+	var silent_test = args.get("silent_test", false)
 	var dir = Directory.new()
 	var dest_files = []
 	if dir.open(from) == OK:
@@ -360,10 +383,13 @@ func directory_copy_recursively(from, to, args={}):
 								is_excluded = true
 								break
 						if not is_excluded:
-							dir.make_dir_recursive(to)
-							dir.copy(source, dest)
+							if test:
+								if not silent_test: logger.warn("[TEST] Writing to %s" % dest)
+							else:
+								dir.make_dir_recursive(to)
+								if dir.copy(source, dest) == OK:
+									logger.debug("Copy from %s to %s" % [source, dest])
 							dest_files.append(dest)
-							logger.debug("Copy from %s to %s" % [source, dest])
 						break
 			file_name = dir.get_next()
 		dir.list_dir_end()
@@ -375,6 +401,8 @@ func directory_copy_recursively(from, to, args={}):
 func directory_delete_recursively(dir_path, args={}):
 	var remove_empty_directory = args.get("remove_empty_directory", true)
 	var exclude = args.get("exclude", [])
+	var test = args.get("test", false)
+	var silent_test = args.get("silent_test", false)
 	var dir = Directory.new()
 	if dir.open(dir_path) == OK:
 		dir.list_dir_begin(true, false)
@@ -385,14 +413,17 @@ func directory_delete_recursively(dir_path, args={}):
 			if dir.current_is_dir():
 				var sub_dir = directory_delete_recursively(source, args)
 				if remove_empty_directory:
-					if source.get_file() == ".git":
-						# Hacks to remove .git, as git pack files stop it from being removed
-						# See https://stackoverflow.com/questions/1213430/how-to-fully-delete-a-git-repository-created-with-init
-						if OS.execute("rm", ["-rf", ProjectSettings.globalize_path(source)]) == OK:
-							logger.debug("Remove empty directory: %s" % sub_dir.get_current_dir())
+					if test:
+						if not silent_test: logger.warn("[TEST] Remove empty directory: %s" % sub_dir.get_current_dir())
 					else:
-						if dir.remove(sub_dir.get_current_dir()) == OK:
-							logger.debug("Remove empty directory: %s" % sub_dir.get_current_dir())
+						if source.get_file() == ".git":
+							# Hacks to remove .git, as git pack files stop it from being removed
+							# See https://stackoverflow.com/questions/1213430/how-to-fully-delete-a-git-repository-created-with-init
+							if OS.execute("rm", ["-rf", ProjectSettings.globalize_path(source)]) == OK:
+								logger.debug("Remove empty directory: %s" % sub_dir.get_current_dir())
+						else:
+							if dir.remove(sub_dir.get_current_dir()) == OK:
+								logger.debug("Remove empty directory: %s" % sub_dir.get_current_dir())
 			else:
 				var excluded = false
 				for exclude_key in exclude:
@@ -400,8 +431,11 @@ func directory_delete_recursively(dir_path, args={}):
 						excluded = true
 						break
 				if not excluded:
-					if dir.remove(file_name) == OK:
-						logger.debug("Remove file: %s" % source)
+					if test:
+						if not silent_test: logger.warn("[TEST] Remove file: %s" % source)
+					else:
+						if dir.remove(file_name) == OK:
+							logger.debug("Remove file: %s" % source)
 			file_name = dir.get_next()
 		dir.list_dir_end()
 	else:
@@ -415,6 +449,8 @@ func directory_delete_recursively(dir_path, args={}):
 func directory_remove_batch(files, args={}):
 	var remove_empty_directory = args.get("remove_empty_directory", true)
 	var keep_import_file = args.get("keep_import_file", false)
+	var test = args.get("test", false)
+	var silent_test = args.get("silent_test", false)
 	var dirs = {}
 	for file in files:
 		var file_dir = file.get_base_dir()
@@ -426,16 +462,25 @@ func directory_remove_batch(files, args={}):
 			dir.open(file_dir)
 			dirs[file_dir] = dir
 
-		if dir.remove(file_name) == OK:
-			logger.debug("Remove file: " + file)
+		if test:
+			if not silent_test: logger.warn("[TEST] Remove file: " + file)
+		else:
+			if dir.remove(file_name) == OK:
+				logger.debug("Remove file: " + file)
 		if not keep_import_file:
 			var import_file = file_name + ".import"
-			if dir.remove(import_file) == OK:
-				logger.debug("Remove import file: " + file)
+			if test:
+				if not silent_test: logger.warn("[TEST] Remove file: " + file)
+			else:
+				if dir.remove(import_file) == OK:
+					logger.debug("Remove import file: " + file)
 	for dir in dirs.values():
 		var slash_count = dir.get_current_dir().count("/") - 2 # Deduct 2 slash from "res://"
-		if dir.remove(dir.get_current_dir()) == OK:
-			logger.debug("Remove empty directory: %s" % dir.get_current_dir())
+		if test:
+			if not silent_test: logger.warn("[TEST] Remove empty directory: %s" % dir.get_current_dir())
+		else:
+			if dir.remove(dir.get_current_dir()) == OK:
+				logger.debug("Remove empty directory: %s" % dir.get_current_dir())
 		# Dumb method to clean empty ancestor directories
 		logger.debug("Removing emoty ancestor directory for %s..." % dir.get_current_dir())
 		var current_dir = dir.get_current_dir()
@@ -443,8 +488,11 @@ func directory_remove_batch(files, args={}):
 			current_dir = current_dir.get_base_dir()
 			var d = Directory.new()
 			if d.open(current_dir) == OK:
-				if d.remove(d.get_current_dir()) == OK:
-					logger.debug("Remove empty ancestor directory: %s" % d.get_current_dir())
+				if test:
+					if not silent_test: logger.warn("[TEST] Remove empty ancestor directory: %s" % d.get_current_dir())
+				else:
+					if d.remove(d.get_current_dir()) == OK:
+						logger.debug("Remove empty ancestor directory: %s" % d.get_current_dir())
 
 func compare_plugins(p1, p2):
 	var changed_keys = []
