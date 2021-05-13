@@ -203,12 +203,16 @@ func install_plugin(plugin):
 	var can_install = not OS.get_environment(ENV_PRODUCTION) if plugin.dev else true
 	if can_install:
 		logger.info("Installing plugin %s..." % plugin.name)
-		# TODO: Should check & verify if plugin downloaded where test mode run beforehand, so it wouldn't have to download twice
-		if downlaod(plugin) == OK:
+		var result = is_plugin_downloaded(plugin)
+		if result != OK:
+			result = downlaod(plugin)
+		else:
+			logger.info("Plugin already downloaded")
+
+		if result == OK:
 			install(plugin)
-			if test:
-				logger.warn("Remove downloaded plugin in test mode")
-				directory_delete_recursively(plugin.plug_dir)
+		else:
+			logger.error("Failed to install plugin %s with error code %d" % [plugin.name, result])
 
 func uninstall_plugin(plugin):
 	var test = !!OS.get_environment(ENV_TEST)
@@ -334,6 +338,13 @@ func uninstall(plugin):
 	directory_remove_batch(dest_files, {"test": test})
 	logger.info("Uninstalled %d file%s for %s" % [dest_files.size(), "s" if dest_files.size() > 1 else "",plugin.name])
 	remove_installed_plugin(plugin.name)
+
+func is_plugin_downloaded(plugin):
+	if not project_dir.dir_exists(plugin.plug_dir + "/.git"):
+		return
+
+	var git = GitExecutable.new(ProjectSettings.globalize_path(plugin.plug_dir), logger)
+	return git.is_up_to_date(plugin)
 
 # Get installed plugin, thread safe
 func get_installed_plugin(plugin_name):
@@ -580,6 +591,47 @@ class GitExecutable extends Reference:
 		for msg in raw_ahead_behind:
 			ahead_behind.append(int(msg))
 		return ahead_behind if exit == OK else []
+
+	func get_current_branch():
+		var output = []
+		var exit = _execute("git rev-parse --abbrev-ref HEAD", true, output)
+		return output[0] if exit == OK else ""
+
+	func get_current_tag():
+		var output = []
+		var exit = _execute("git describe --tags --exact-match", true, output)
+		return output[0] if exit == OK else ""
+
+	func get_current_commit():
+		var output = []
+		var exit = _execute("git rev-parse --short HEAD", true, output)
+		return output[0] if exit == OK else ""
+
+	func is_detached_head():
+		var output = []
+		var exit = _execute("git rev-parse --short HEAD", true, output)
+		return (!!output[0]) if exit == OK else true
+
+	func is_up_to_date(args={}):
+		if fetch().exit == OK:
+			var branch = args.get("branch", "")
+			var tag = args.get("tag", "")
+			var commit = args.get("commit", "")
+	
+			if branch:
+				if branch == get_current_branch():
+					return FAILED if is_detached_head() else OK
+			elif tag:
+				if tag == get_current_tag():
+					return OK
+			elif commit:
+				if commit == get_current_commit():
+					return OK
+	
+			var ahead_behind = get_commit_comparison("HEAD", "origin")
+			var is_commit_behind = !!ahead_behind[1] if ahead_behind.size() == 2 else false
+			return FAILED if is_commit_behind else OK
+		return FAILED
 
 class Logger extends Reference:
 	enum LogLevel {
