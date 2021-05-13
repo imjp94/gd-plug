@@ -57,6 +57,8 @@ func _initialize():
 				_plug_init()
 			"install", "update":
 				_plug_install()
+			"uninstall":
+				_plug_uninstall()
 			"upgrade":
 				# TODO: Upgrade gd-plug itself
 				logger.info("upgrade is not implemented yet!")
@@ -129,6 +131,14 @@ func _plug_install():
 		if removed:
 			var installed_plugin = get_installed_plugin(plugin.name)
 			start_plugin_thread("uninstall_plugin", installed_plugin)
+	wait_threads()
+
+func _plug_uninstall():
+	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
+	logger.info("Uninstalling...")
+	for plugin in _installed_plugins.values():
+		var installed_plugin = get_installed_plugin(plugin.name)
+		start_plugin_thread("uninstall_plugin", installed_plugin)
 	wait_threads()
 
 func _plug_status():
