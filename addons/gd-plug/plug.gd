@@ -12,6 +12,7 @@ const DEFAULT_BASE_PLUG_SCRIPT_PATH = "res://addons/gd-plug/plug.gd"
 
 const ENV_PRODUCTION = "production"
 const ENV_TEST = "test"
+const ENV_FORCE = "force"
 
 const MSG_PLUG_START_ASSERTION = "_plug_start() must be called first"
 
@@ -49,6 +50,8 @@ func _initialize():
 				OS.set_environment(ENV_PRODUCTION, "true")
 			"test":
 				OS.set_environment(ENV_TEST, "true")
+			"force":
+				OS.set_environment(ENV_FORCE, "true")
 
 	logger.debug("cmdline_args: %s" % args)
 	_start_time = OS.get_system_time_msecs()
@@ -333,11 +336,22 @@ func downlaod(plugin):
 	return result.exit
 
 func install(plugin):
-	logger.info("Installing files for %s..." % plugin.name)
-	var test = !!OS.get_environment(ENV_TEST)
 	var include = plugin.get("include", [])
 	if include.empty(): # Auto include "addons/" folder if not explicitly specified
 		include = ["addons/"]
+	if not OS.get_environment(ENV_FORCE) and not OS.get_environment(ENV_TEST):
+		var is_exists = false
+		var dest_files = directory_copy_recursively(plugin.plug_dir, "res://", {"include": include, "exclude": plugin.exclude, "test": true, "silent_test": true})
+		for dest_file in dest_files:
+			if project_dir.file_exists(dest_file):
+				logger.warn("%s attempting to overwrite file %s" % [plugin.name, dest_file])
+				is_exists = true
+		if is_exists:
+			logger.warn("Installation of %s terminated to avoid overwriting user files, you may disable safe mode with command \"force\"" % plugin.name)
+			return ERR_ALREADY_EXISTS
+
+	logger.info("Installing files for %s..." % plugin.name)
+	var test = !!OS.get_environment(ENV_TEST)
 	var dest_files = directory_copy_recursively(plugin.plug_dir, "res://", {"include": include, "exclude": plugin.exclude, "test": test})
 	plugin.dest_files = dest_files
 	logger.info("Installed %d file%s for %s" % [dest_files.size(), "s" if dest_files.size() > 1 else "", plugin.name])
@@ -348,6 +362,7 @@ func install(plugin):
 			_on_updated(plugin)
 			call(plugin.on_updated, plugin.duplicate())
 			emit_signal("updated", plugin)
+	return OK
 
 func uninstall(plugin):
 	var test = !!OS.get_environment(ENV_TEST)
