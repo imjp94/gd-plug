@@ -62,6 +62,8 @@ func _initialize():
 				_plug_install()
 			"uninstall":
 				_plug_uninstall()
+			"clean":
+				_plug_clean()
 			"upgrade":
 				# TODO: Upgrade gd-plug itself
 				logger.info("upgrade is not implemented yet!")
@@ -149,6 +151,22 @@ func _plug_uninstall():
 	for plugin in _installed_plugins.values():
 		var installed_plugin = get_installed_plugin(plugin.name)
 		start_plugin_thread("uninstall_plugin", installed_plugin)
+	wait_threads()
+
+func _plug_clean():
+	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
+	logger.info("Cleaning...")
+	var plugged_dir = Directory.new()
+	plugged_dir.open(DEFAULT_PLUG_DIR)
+	plugged_dir.list_dir_begin(true, true)
+	var file = plugged_dir.get_next()
+	while not file.empty():
+		if plugged_dir.current_is_dir():
+			if not (file in _installed_plugins):
+				logger.info("Remove %s" % file)
+				start_thread("directory_delete_recursively", plugged_dir.get_current_dir() + "/" + file)
+		file = plugged_dir.get_next()
+	plugged_dir.list_dir_end()
 	wait_threads()
 
 func _plug_status():
