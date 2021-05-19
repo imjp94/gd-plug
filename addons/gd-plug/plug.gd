@@ -196,18 +196,51 @@ func _plug_status():
 	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
 	logger.info("Installed %d plugin%s" % [_installed_plugins.size(), "s" if _installed_plugins.size() > 1 else ""])
 	var new_plugins = _plugged_plugins.duplicate()
+	var has_checking_plugin = false
+	var removed_plugins = []
 	for plugin in _installed_plugins.values():
 		logger.info("- {name} - {url}".format(plugin))
 		new_plugins.erase(plugin.name)
 		var removed = not (plugin.name in _plugged_plugins)
 		if removed:
-			logger.info("%s removed" % plugin.name)
+			removed_plugins.append(plugin)
+		else:
+			threadpool.enqueue_task(self, "check_plugin", _plugged_plugins[plugin.name])
+			has_checking_plugin = true
+	if has_checking_plugin:
+		logger.info("\n", true)
+		threadpool.disconnect("all_thread_finished", self, "request_quit")
+		yield(threadpool, "all_thread_finished")
+		threadpool.connect("all_thread_finished", self, "request_quit")
+		logger.debug("Finished checking plugins, ready to proceed")
 	if new_plugins:
 		logger.info("\nPlugged %d plugin%s" % [new_plugins.size(), "s" if new_plugins.size() > 1 else ""])
 		for plugin in new_plugins.values():
 			var is_new = not (plugin.name in _installed_plugins)
 			if is_new:
 				logger.info("- {name} - {url}".format(plugin))
+	if removed_plugins:
+		logger.info("\nUnplugged %d plugin%s" % [removed_plugins.size(), "s" if removed_plugins.size() > 1 else ""])
+		for plugin in removed_plugins:
+			logger.info("- %s removed" % plugin.name)
+	var plug_directory = Directory.new()
+	var orphan_dirs = []
+	if plug_directory.open(DEFAULT_PLUG_DIR) == OK:
+		plug_directory.list_dir_begin(true, true)
+		var file = plug_directory.get_next()
+		while not file.empty():
+			if plug_directory.current_is_dir():
+				if not (file in _installed_plugins):
+					orphan_dirs.append(file)
+			file = plug_directory.get_next()
+		plug_directory.list_dir_end()
+	if orphan_dirs:
+		logger.info("\nOrphan directory, %d found in %s, execute \"clean\" command to remove" % [orphan_dirs.size(), DEFAULT_PLUG_DIR])
+		for dir in orphan_dirs:
+			logger.info("- %s" % dir)
+
+	if has_checking_plugin:
+		request_quit()
 
 # Index & validate plugin
 func plug(repo, args={}):
@@ -261,49 +294,62 @@ func uninstall_plugin(plugin):
 	uninstall(plugin)
 	directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH], "test": test})
 
-func update_plugin(plugin):
+func update_plugin(plugin, checking=false):
+	if not (plugin.name in _installed_plugins):
+		logger.info("%s new plugin" % plugin.name)
+		return true
+
+	var git = GitExecutable.new(ProjectSettings.globalize_path(plugin.plug_dir), logger)
 	var installed_plugin = get_installed_plugin(plugin.name)
-	var changed_keys = compare_plugins(plugin, installed_plugin)
-	var changed = not changed_keys.empty()
-	var global_dest_dir = ProjectSettings.globalize_path(plugin.plug_dir)
-	var git_executable = GitExecutable.new(global_dest_dir, logger)
+	var changes = compare_plugins(plugin, installed_plugin)
+	var should_clone = false
 	var should_pull = false
-	var freezed = !!plugin.branch or !!plugin.tag or !!plugin.commit
-	if not freezed:
+	var should_reinstall = false
+
+	if plugin.tag or plugin.commit:
+		for rev in ["tag", "commit"]:
+			var freeze_at = plugin[rev]
+			if freeze_at:
+				logger.info("%s frozen at %s \"%s\"" % [plugin.name, rev, freeze_at])
+				break
+	else:
 		var ahead_behind = []
-		if git_executable.fetch().exit == OK:
-			ahead_behind = git_executable.get_commit_comparison("HEAD", "origin")
+		if git.fetch("origin " + plugin.branch if plugin.branch else "origin").exit == OK:
+			ahead_behind = git.get_commit_comparison("HEAD", "origin/" + plugin.branch if plugin.branch else "origin")
 		var is_commit_behind = !!ahead_behind[1] if ahead_behind.size() == 2 else false
 		if is_commit_behind:
-			changed = true
+			logger.info("%s %d commits behind, update required" % [plugin.name, ahead_behind[1]])
 			should_pull = true
 		else:
-			if not changed:
-				logger.info("%s up to date" % plugin.name)
-	else:
-		if not changed:
-			for rev in ["branch", "tag", "commit"]:
-				var freeze_at = plugin[rev]
-				if freeze_at:
-					logger.info("%s frozen at %s \"%s\"" % [plugin.name, rev, freeze_at])
-					break
-	if changed:
-		logger.info("%s changed %s, updating..." % [plugin.name, changed_keys])
-		uninstall(installed_plugin)
-		var should_clone = "url" in changed_keys or "branch" in changed_keys or "tag" in changed_keys or "commit" in changed_keys
-		should_clone = should_clone
+			logger.info("%s up to date" % plugin.name)
+
+	if changes:
+		logger.info("%s changed %s" % [plugin.name, changes])
+		should_reinstall = true
+		if "url" in changes or "branch" in changes or "tag" in changes or "commit" in changes:
+			logger.info("%s repository setting changed, update required" % plugin.name)
+			should_clone = true
+
+	if not checking:
 		if should_clone:
 			logger.info("%s cloning from %s..." % [plugin.name, plugin.url])
 			var test = !!OS.get_environment(ENV_TEST)
+			uninstall(get_installed_plugin(plugin.name))
 			directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH], "test": test})
 			if downlaod(plugin) == OK:
 				install(plugin)
 		elif should_pull:
 			logger.info("%s pulling updates from %s..." % [plugin.name, plugin.url])
-			if git_executable.pull().exit == OK:
+			uninstall(get_installed_plugin(plugin.name))
+			if git.pull().exit == OK:
 				install(plugin)
-		else:
+		elif should_reinstall:
+			logger.info("%s reinstalling..." % plugin.name)
+			uninstall(get_installed_plugin(plugin.name))
 			install(plugin)
+
+func check_plugin(plugin):
+	update_plugin(plugin, true)
 
 func downlaod(plugin):
 	logger.info("Downloading %s from %s..." % [plugin.name, plugin.url])
