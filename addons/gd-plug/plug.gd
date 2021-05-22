@@ -589,6 +589,13 @@ class GitExecutable extends Reference:
 		logger.debug("Execution ended(code:%d): %s" % [exit, output])
 		return exit
 
+	func init():
+		logger.debug("Initializing git at %s..." % cwd)
+		var output = []
+		var exit = _execute("git init", true, output)
+		logger.debug("Successfully init" if exit == OK else "Failed to init")
+		return {"exit": exit, "output": output}
+
 	func clone(src, dest, args={}):
 		logger.debug("Cloning from %s to %s..." % [src, dest])
 		var output = []
@@ -598,9 +605,27 @@ class GitExecutable extends Reference:
 		var command = "git clone --depth=1 --progress %s %s" % [src, dest]
 		if branch or tag:
 			command = "git clone --depth=1 --single-branch --branch %s %s %s" % [branch if branch else tag, src, dest]
+		elif commit:
+			return clone_commit(src, dest, commit)
 		var exit = _execute(command, true, output)
 		logger.debug("Successfully cloned from %s" % src if exit == OK else "Failed to clone from %s" % src)
 		return {"exit": exit, "output": output}
+
+	func clone_commit(src, dest, commit):
+		var output = []
+		if commit.length() < 40:
+			logger.error("Expected full length 40 digits commit-hash to clone specific commit, given {%s}" % commit)
+			return {"exit": FAILED, "output": output}
+
+		logger.debug("Cloning from %s to %s @ %s..." % [src, dest, commit])
+		var result = init()
+		if result.exit == OK:
+			result = remote_add("origin", src)
+			if result.exit == OK:
+				result = fetch("%s %s" % ["origin", commit])
+				if result.exit == OK:
+					result = reset("--hard", "FETCH_HEAD")
+		return result
 
 	func fetch(rm="--all"):
 		logger.debug("Fetching %s..." % rm.replace("--", ""))
@@ -614,6 +639,20 @@ class GitExecutable extends Reference:
 		var output = []
 		var exit = _execute("git pull --rebase", true, output)
 		logger.debug("Successfully pulled" if exit == OK else "Failed to pull")
+		return {"exit": exit, "output": output}
+
+	func remote_add(name, src):
+		logger.debug("Adding remote %s@%s..." % [name, src])
+		var output = []
+		var exit = _execute("git remote add %s %s" % [name, src], true, output)
+		logger.debug("Successfully added remote" if exit == OK else "Failed to add remote")
+		return {"exit": exit, "output": output}
+
+	func reset(mode, to):
+		logger.debug("Resetting %s %s..." % [mode, to])
+		var output = []
+		var exit = _execute("git reset %s %s" % [mode, to], true, output)
+		logger.debug("Successfully reset" if exit == OK else "Failed to reset")
 		return {"exit": exit, "output": output}
 
 	func get_commit_comparison(branch_a, branch_b):
