@@ -78,8 +78,7 @@ func _initialize():
 			"clean":
 				_plug_clean()
 			"upgrade":
-				# TODO: Upgrade gd-plug itself
-				logger.info("upgrade is not implemented yet!")
+				_plug_upgrade()
 			"status":
 				_plug_status()
 			"version":
@@ -197,6 +196,20 @@ func _plug_clean():
 				threadpool.enqueue_task(self, "directory_delete_recursively", plugged_dir.get_current_dir() + "/" + file)
 		file = plugged_dir.get_next()
 	plugged_dir.list_dir_end()
+
+func _plug_upgrade():
+	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
+	logger.info("Upgrading gd-plug...")
+	plug("imjp94/gd-plug")
+	var gd_plug = _plugged_plugins["gd-plug"]
+	OS.set_environment(ENV_FORCE, "true") # Required to overwrite res://addons/gd-plug/plug.gd
+	threadpool.enqueue_task(self, "install_plugin", gd_plug)
+	threadpool.disconnect("all_thread_finished", self, "request_quit")
+	if not threadpool.is_all_thread_finished():
+		yield(threadpool, "all_thread_finished")
+		logger.debug("All installation finished! Ready to uninstall removed plugins...")
+	threadpool.connect("all_thread_finished", self, "request_quit")
+	threadpool.enqueue_task(self, "directory_delete_recursively", gd_plug.plug_dir)
 
 func _plug_status():
 	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
@@ -394,7 +407,8 @@ func install(plugin):
 	var dest_files = directory_copy_recursively(plugin.plug_dir, "res://", {"include": include, "exclude": plugin.exclude, "test": test})
 	plugin.dest_files = dest_files
 	logger.info("Installed %d file%s for %s" % [dest_files.size(), "s" if dest_files.size() > 1 else "", plugin.name])
-	set_installed_plugin(plugin)
+	if plugin.name != "gd-plug":
+		set_installed_plugin(plugin)
 	if plugin.on_updated:
 		if has_method(plugin.on_updated):
 			logger.info("Execute post-update function for %s: %s" % [plugin.name, plugin.do])
