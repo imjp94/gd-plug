@@ -26,7 +26,11 @@ var _plugged_plugins = {}
 var _threads = []
 var _mutex = Mutex.new()
 var _start_time = 0
+var threadpool = ThreadPool.new(logger)
 
+
+func _init():
+	threadpool.connect("all_thread_finished", self, "request_quit")
 
 func _initialize():
 	var args = OS.get_cmdline_args()
@@ -76,7 +80,11 @@ func _initialize():
 				logger.info(VERSION)
 			_:
 				logger.error("Unknown command %s" % args[0])
-	quit()
+	# NOTE: Do no put anything after this line except request_quit(), as _plug_*() may call request_quit()
+	request_quit()
+
+func _idle(delta):
+	threadpool.process(delta)
 
 func _finalize():
 	_plug_end()
@@ -87,6 +95,13 @@ func _on_updated(plugin):
 
 func _plugging():
 	pass
+
+func request_quit(exit_code=-1):
+	if threadpool.is_all_thread_finished() and threadpool.is_all_task_finished():
+		quit(exit_code)
+		return true
+	logger.debug("Request quit declined, threadpool is still running")
+	return false
 
 # Index installed plugins, or create directory "plugged" if not exists
 func _plug_start():
@@ -135,26 +150,32 @@ func _plug_install():
 			var installed_plugin = get_installed_plugin(plugin.name)
 			if (installed_plugin.dev or plugin.dev) and OS.get_environment(ENV_PRODUCTION):
 				logger.info("Remove dev plugin for production: %s" % plugin.name)
-				start_plugin_thread("uninstall_plugin", installed_plugin)
+				threadpool.enqueue_task(self, "uninstall_plugin", installed_plugin)
 			else:
-				start_plugin_thread("update_plugin", plugin)
+				threadpool.enqueue_task(self, "update_plugin", plugin)
 		else:
-			start_plugin_thread("install_plugin", plugin)
-	wait_threads()
+			threadpool.enqueue_task(self, "install_plugin", plugin)
+
+	var removed_plugins = []
 	for plugin in _installed_plugins.values():
 		var removed = not (plugin.name in _plugged_plugins)
 		if removed:
-			var installed_plugin = get_installed_plugin(plugin.name)
-			start_plugin_thread("uninstall_plugin", installed_plugin)
-	wait_threads()
+			removed_plugins.append(plugin)
+	if removed_plugins:
+		threadpool.disconnect("all_thread_finished", self, "request_quit")
+		if not threadpool.is_all_thread_finished():
+			yield(threadpool, "all_thread_finished")
+			logger.debug("All installation finished! Ready to uninstall removed plugins...")
+		threadpool.connect("all_thread_finished", self, "request_quit")
+		for plugin in removed_plugins:
+			threadpool.enqueue_task(self, "uninstall_plugin", plugin, Thread.PRIORITY_LOW)
 
 func _plug_uninstall():
 	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
 	logger.info("Uninstalling...")
 	for plugin in _installed_plugins.values():
 		var installed_plugin = get_installed_plugin(plugin.name)
-		start_plugin_thread("uninstall_plugin", installed_plugin)
-	wait_threads()
+		threadpool.enqueue_task(self, "uninstall_plugin", installed_plugin, Thread.PRIORITY_LOW)
 
 func _plug_clean():
 	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
@@ -167,10 +188,9 @@ func _plug_clean():
 		if plugged_dir.current_is_dir():
 			if not (file in _installed_plugins):
 				logger.info("Remove %s" % file)
-				start_thread("directory_delete_recursively", plugged_dir.get_current_dir() + "/" + file)
+				threadpool.enqueue_task(self, "directory_delete_recursively", plugged_dir.get_current_dir() + "/" + file)
 		file = plugged_dir.get_next()
 	plugged_dir.list_dir_end()
-	wait_threads()
 
 func _plug_status():
 	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
@@ -284,39 +304,6 @@ func update_plugin(plugin):
 				install(plugin)
 		else:
 			install(plugin)
-
-func plugin_call(data):
-	var method = data.method
-	var plugin = data.plugin
-	if has_method(method):
-		call(method, plugin)
-	else:
-		logger.error("Unexpected method called: %s" % method)
-
-func start_plugin_thread(method, plugin):
-	var data = {}
-	data["method"] = method
-	data["plugin"] = plugin
-	logger.debug("Thread start \"%s\" for plugin %s" % [method, plugin.name])
-	return start_thread("plugin_call", data)
-
-func start_thread(method, data):
-	var thread = Thread.new()
-	_threads.append(thread)
-	thread.start(self, method, data)
-	logger.debug("Thread start for \"%s\"" % method)
-	return thread
-
-func wait_threads():
-	if _threads.empty():
-		return
-
-	logger.debug("Waiting %d thread%s..." % [_threads.size(), "s" if _threads.size() > 1 else ""])
-	for thread in _threads:
-		if thread.is_active():
-			thread.wait_to_finish()
-	_threads.clear()
-	logger.debug("All threads joined")
 
 func downlaod(plugin):
 	logger.info("Downloading %s from %s..." % [plugin.name, plugin.url])
@@ -704,6 +691,99 @@ class GitExecutable extends Reference:
 			var is_commit_behind = !!ahead_behind[1] if ahead_behind.size() == 2 else false
 			return FAILED if is_commit_behind else OK
 		return FAILED
+
+class ThreadPool extends Reference:
+	signal all_thread_finished()
+
+	var _threads = []
+	var _finished_threads = []
+	var _mutex = Mutex.new()
+	var _tasks = []
+	var logger
+
+	func _init(p_logger):
+		logger = p_logger
+		_threads.resize(OS.get_processor_count())
+
+	func _execute_task(task):
+		var thread = _get_thread()
+		var can_execute = thread
+		if can_execute:
+			task.thread = weakref(thread)
+			thread.start(self, "_execute", task, task.priority)
+			logger.debug("Execute task %s.%s() " % [task.instance, task.method])
+		return can_execute
+
+	func _execute(args):
+		args.instance.call(args.method, args.userdata)
+		_mutex.lock()
+		var thread = args.thread.get_ref()
+		_threads[_threads.find(thread)] = null
+		_finished_threads.append(thread)
+		var all_finished = is_all_thread_finished()
+		_mutex.unlock()
+
+		logger.debug("Execution finished %s.%s() " % [args.instance, args.method])
+		if all_finished:
+			logger.debug("All thread finished")
+			emit_signal("all_thread_finished")
+
+	func _flush_tasks():
+		if not _tasks:
+			return
+
+		var executed = true
+		while executed:
+			var task = _tasks.pop_front()
+			if task != null:
+				executed = _execute_task(task)
+				if not executed:
+					_tasks.push_front(task)
+			else:
+				executed = false
+
+	func _flush_threads():
+		for i in _finished_threads.size():
+			var thread = _finished_threads.pop_front()
+			thread.wait_to_finish()
+
+	func enqueue_task(instance, method, userdata=null, priority=1):
+		enqueue({"instance": instance, "method": method, "userdata": userdata, "priority": priority})
+
+	func enqueue(task):
+		var can_execute = _execute_task(task)
+		if not can_execute:
+			_tasks.append(task)
+
+	func process(delta):
+		_flush_tasks()
+		_flush_threads()
+
+	func _get_thread():
+		var thread
+		for i in OS.get_processor_count():
+			var t = _threads[i]
+			if t:
+				if not t.is_active():
+					thread = t
+					break
+			else:
+				thread = Thread.new()
+				_threads[i] = thread
+				break
+		return thread
+
+	func is_all_thread_finished():
+		for i in _threads.size():
+			if _threads[i]:
+				return false
+		return true
+
+	func is_all_task_finished():
+		for i in _tasks.size():
+			if _tasks[i]:
+				return false
+		return true
 
 class Logger extends Reference:
 	enum LogLevel {
