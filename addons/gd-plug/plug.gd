@@ -13,6 +13,8 @@ const DEFAULT_BASE_PLUG_SCRIPT_PATH = "res://addons/gd-plug/plug.gd"
 const ENV_PRODUCTION = "production"
 const ENV_TEST = "test"
 const ENV_FORCE = "force"
+const ENV_KEEP_IMPORT_FILE = "keep_import_file"
+const ENV_KEEP_IMPORT_RESOURCE_FILE = "keep_import_resource_file"
 
 const MSG_PLUG_START_ASSERTION = "_plug_start() must be called first"
 
@@ -56,6 +58,10 @@ func _initialize():
 				OS.set_environment(ENV_TEST, "true")
 			"force":
 				OS.set_environment(ENV_FORCE, "true")
+			"keep-import-file":
+				OS.set_environment(ENV_KEEP_IMPORT_FILE, "true")
+			"keep-import-resource-file":
+				OS.set_environment(ENV_KEEP_IMPORT_RESOURCE_FILE, "true")
 
 	logger.debug("cmdline_args: %s" % args)
 	_start_time = OS.get_system_time_msecs()
@@ -399,9 +405,11 @@ func install(plugin):
 
 func uninstall(plugin):
 	var test = !!OS.get_environment(ENV_TEST)
+	var keep_import_file = !!OS.get_environment(ENV_KEEP_IMPORT_FILE)
+	var keep_import_resource_file = !!OS.get_environment(ENV_KEEP_IMPORT_RESOURCE_FILE)
 	var dest_files = plugin.get("dest_files", [])
 	logger.info("Uninstalling %d file%s for %s..." % [dest_files.size(), "s" if dest_files.size() > 1 else "",plugin.name])
-	directory_remove_batch(dest_files, {"test": test})
+	directory_remove_batch(dest_files, {"test": test, "keep_import_file": keep_import_file, "keep_import_resource_file": keep_import_resource_file})
 	logger.info("Uninstalled %d file%s for %s" % [dest_files.size(), "s" if dest_files.size() > 1 else "",plugin.name])
 	remove_installed_plugin(plugin.name)
 
@@ -526,6 +534,7 @@ func directory_delete_recursively(dir_path, args={}):
 func directory_remove_batch(files, args={}):
 	var remove_empty_directory = args.get("remove_empty_directory", true)
 	var keep_import_file = args.get("keep_import_file", false)
+	var keep_import_resource_file = args.get("keep_import_resource_file", false)
 	var test = args.get("test", false)
 	var silent_test = args.get("silent_test", false)
 	var dirs = {}
@@ -539,18 +548,18 @@ func directory_remove_batch(files, args={}):
 			dir.open(file_dir)
 			dirs[file_dir] = dir
 
-		if test:
-			if not silent_test: logger.warn("[TEST] Remove file: " + file)
+		if file.ends_with(".import"):
+			if not keep_import_file:
+				_remove_import_file(dir, file, keep_import_resource_file, test, silent_test)
 		else:
-			if dir.remove(file_name) == OK:
-				logger.debug("Remove file: " + file)
-		if not keep_import_file:
-			var import_file = file_name + ".import"
 			if test:
 				if not silent_test: logger.warn("[TEST] Remove file: " + file)
 			else:
-				if dir.remove(import_file) == OK:
-					logger.debug("Remove import file: " + file)
+				if dir.remove(file_name) == OK:
+					logger.debug("Remove file: " + file)
+			if not keep_import_file:
+				_remove_import_file(dir, file + ".import", keep_import_resource_file, test, silent_test)
+		
 	for dir in dirs.values():
 		var slash_count = dir.get_current_dir().count("/") - 2 # Deduct 2 slash from "res://"
 		if test:
@@ -570,6 +579,49 @@ func directory_remove_batch(files, args={}):
 				else:
 					if d.remove(d.get_current_dir()) == OK:
 						logger.debug("Remove empty ancestor directory: %s" % d.get_current_dir())
+
+func _remove_import_file(dir, file, keep_import_resource_file=false, test=false, silent_test=false):
+	if not dir.file_exists(file):
+		return
+
+	if not keep_import_resource_file:
+		var import_config = ConfigFile.new()
+		if import_config.load(file) == OK:
+			var metadata = import_config.get_value("remap", "metadata", {})
+			var imported_formats = metadata.get("imported_formats", [])
+			if imported_formats:
+				for format in imported_formats:
+					_remove_import_resource_file(dir, import_config, "." + format, test)
+			else:
+				_remove_import_resource_file(dir, import_config, "", test)
+	if test:
+		if not silent_test: logger.warn("[TEST] Remove import file: " + file)
+	else:
+		if dir.remove(file) == OK:
+			logger.debug("Remove import file: " + file)
+		else:
+			# TODO: Sometimes Directory.remove() unable to remove random .import file and return error code 1(Generic Error)
+			# Maybe enforce the removal from shell?
+			logger.warn("Failed to remove import file: " + file)
+
+func _remove_import_resource_file(dir, import_config, import_format="", test=false):
+	var import_resource_file = import_config.get_value("remap", "path" + import_format, "")
+	var checksum_file = import_resource_file.trim_suffix("." + import_resource_file.get_extension()) + ".md5" if import_resource_file else ""
+	if import_resource_file:
+		if dir.file_exists(import_resource_file):
+			if test:
+				logger.info("[IMPORT] Remove import resource file: " + import_resource_file)
+			else:
+				if dir.remove(import_resource_file) == OK:
+					logger.debug("Remove import resource file: " + import_resource_file)
+	if checksum_file:
+		checksum_file = checksum_file.replace(import_format, "")
+		if dir.file_exists(checksum_file):
+			if test:
+				logger.info("[IMPORT] Remove import checksum file: " + checksum_file)
+			else:
+				if dir.remove(checksum_file) == OK:
+					logger.debug("Remove import checksum file: " + checksum_file)
 
 func compare_plugins(p1, p2):
 	var changed_keys = []
