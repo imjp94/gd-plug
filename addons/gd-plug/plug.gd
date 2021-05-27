@@ -287,6 +287,7 @@ func plug(repo, args={}):
 	plugin.commit = args.get("commit", "")
 	plugin.dev = args.get("dev", false)
 	plugin.on_updated = args.get("on_updated", "")
+	plugin.install_root = args.get("install_root", "")
 
 	_plugged_plugins[plugin.name] = plugin
 	logger.debug("Plug: %s" % plugin)
@@ -393,7 +394,7 @@ func install(plugin):
 		include = ["addons/"]
 	if not OS.get_environment(ENV_FORCE) and not OS.get_environment(ENV_TEST):
 		var is_exists = false
-		var dest_files = directory_copy_recursively(plugin.plug_dir, "res://", {"include": include, "exclude": plugin.exclude, "test": true, "silent_test": true})
+		var dest_files = directory_copy_recursively(plugin.plug_dir, "res://" + plugin.install_root, {"include": include, "exclude": plugin.exclude, "test": true, "silent_test": true})
 		for dest_file in dest_files:
 			if project_dir.file_exists(dest_file):
 				logger.warn("%s attempting to overwrite file %s" % [plugin.name, dest_file])
@@ -404,7 +405,7 @@ func install(plugin):
 
 	logger.info("Installing files for %s..." % plugin.name)
 	var test = !!OS.get_environment(ENV_TEST)
-	var dest_files = directory_copy_recursively(plugin.plug_dir, "res://", {"include": include, "exclude": plugin.exclude, "test": test})
+	var dest_files = directory_copy_recursively(plugin.plug_dir, "res://" + plugin.install_root, {"include": include, "exclude": plugin.exclude, "test": test})
 	plugin.dest_files = dest_files
 	logger.info("Installed %d file%s for %s" % [dest_files.size(), "s" if dest_files.size() > 1 else "", plugin.name])
 	if plugin.name != "gd-plug":
