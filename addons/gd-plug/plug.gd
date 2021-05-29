@@ -280,17 +280,34 @@ func plug(repo, args={}):
 		logger.error("Invalid repo: %s" % repo)
 	plugin.plug_dir = DEFAULT_PLUG_DIR + "/" + plugin.name
 
+	var is_valid = true
 	plugin.include = args.get("include", [])
+	is_valid = is_valid and validate_var_type(plugin, "include", TYPE_ARRAY, "Array")
 	plugin.exclude = args.get("exclude", [])
+	is_valid = is_valid and validate_var_type(plugin, "exclude", TYPE_ARRAY, "Array")
 	plugin.branch = args.get("branch", "")
+	is_valid = is_valid and validate_var_type(plugin, "branch", TYPE_STRING, "String")
 	plugin.tag = args.get("tag", "")
+	is_valid = is_valid and validate_var_type(plugin, "tag", TYPE_STRING, "String")
 	plugin.commit = args.get("commit", "")
+	is_valid = is_valid and validate_var_type(plugin, "commit", TYPE_STRING, "String")
+	if not plugin.commit.empty():
+		var is_valid_commit = plugin.commit.length() == 40
+		if not is_valid_commit:
+			logger.error("Expected full length 40 digits commit-hash string, given %s" % plugin.commit)
+		is_valid = is_valid and is_valid_commit
 	plugin.dev = args.get("dev", false)
+	is_valid = is_valid and validate_var_type(plugin, "dev", TYPE_BOOL, "Boolean")
 	plugin.on_updated = args.get("on_updated", "")
+	is_valid = is_valid and validate_var_type(plugin, "on_updated", TYPE_STRING, "String")
 	plugin.install_root = args.get("install_root", "")
+	is_valid = is_valid and validate_var_type(plugin, "install_root", TYPE_STRING, "String")
 
-	_plugged_plugins[plugin.name] = plugin
-	logger.debug("Plug: %s" % plugin)
+	if is_valid:
+		_plugged_plugins[plugin.name] = plugin
+		logger.debug("Plug: %s" % plugin)
+	else:
+		logger.error("Failed to plug %s, validation error" % plugin.name)
 
 func install_plugin(plugin):
 	var test = !!OS.get_environment(ENV_TEST)
@@ -650,6 +667,13 @@ func compare_plugins(p1, p2):
 func get_plugin_name_from_repo(repo):
 	repo = repo.replace(".git", "").trim_suffix("/")
 	return repo.get_file()
+
+func validate_var_type(obj, var_name, type, type_string):
+	var value = obj.get(var_name)
+	var is_valid = typeof(value) == type
+	if not is_valid:
+		logger.error("Expected variable \"%s\" to be %s, given %s" % [var_name, type_string, value])
+	return is_valid
 
 const INIT_PLUG_SCRIPT = \
 """extends "res://addons/gd-plug/plug.gd"
