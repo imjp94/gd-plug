@@ -704,7 +704,7 @@ class GitExecutable extends Reference:
 				cmd = cmd if read_stderr else "%s 2> nul" % cmd
 				logger.debug("Execute \"%s\"" % cmd)
 				exit = OS.execute("cmd", ["/C", cmd], blocking, output, read_stderr)
-			"X11", "OSX":
+			"X11", "OSX", "Server":
 				cmd if read_stderr else "%s 2>/dev/null" % cmd
 				logger.debug("Execute \"%s\"" % cmd)
 				exit = OS.execute("bash", ["-c", cmd], blocking, output, read_stderr)
