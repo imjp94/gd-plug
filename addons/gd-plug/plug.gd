@@ -20,7 +20,7 @@ const MSG_PLUG_START_ASSERTION = "_plug_start() must be called first"
 
 var project_dir = Directory.new()
 var installation_config = ConfigFile.new()
-var logger = Logger.new()
+var logger = _Logger.new()
 
 var _installed_plugins
 var _plugged_plugins = {}
@@ -28,7 +28,7 @@ var _plugged_plugins = {}
 var _threads = []
 var _mutex = Mutex.new()
 var _start_time = 0
-var threadpool = ThreadPool.new(logger)
+var threadpool = _ThreadPool.new(logger)
 
 
 func _init():
@@ -47,11 +47,11 @@ func _initialize():
 		var key = arg.to_lower()
 		match key:
 			"detail":
-				logger.log_format = Logger.DEFAULT_LOG_FORMAT_DETAIL
+				logger.log_format = _Logger.DEFAULT_LOG_FORMAT_DETAIL
 			"debug", "d":
-				logger.log_level = Logger.LogLevel.DEBUG
+				logger.log_level = _Logger.LogLevel.DEBUG
 			"quiet", "q", "silent":
-				logger.log_level = Logger.LogLevel.NONE
+				logger.log_level = _Logger.LogLevel.NONE
 			"production":
 				OS.set_environment(ENV_PRODUCTION, "true")
 			"test":
@@ -336,7 +336,7 @@ func update_plugin(plugin, checking=false):
 		logger.info("%s new plugin" % plugin.name)
 		return true
 
-	var git = GitExecutable.new(ProjectSettings.globalize_path(plugin.plug_dir), logger)
+	var git = _GitExecutable.new(ProjectSettings.globalize_path(plugin.plug_dir), logger)
 	var installed_plugin = get_installed_plugin(plugin.name)
 	var changes = compare_plugins(plugin, installed_plugin)
 	var should_clone = false
@@ -395,7 +395,7 @@ func downlaod(plugin):
 	if project_dir.dir_exists(plugin.plug_dir):
 		directory_delete_recursively(plugin.plug_dir)
 	project_dir.make_dir(plugin.plug_dir)
-	var result = GitExecutable.new(global_dest_dir, logger).clone(plugin.url, global_dest_dir, {"branch": plugin.branch, "tag": plugin.tag, "commit": plugin.commit})
+	var result = _GitExecutable.new(global_dest_dir, logger).clone(plugin.url, global_dest_dir, {"branch": plugin.branch, "tag": plugin.tag, "commit": plugin.commit})
 	if result.exit == OK:
 		logger.info("Successfully download %s" % [plugin.name])
 	else:
@@ -449,7 +449,7 @@ func is_plugin_downloaded(plugin):
 	if not project_dir.dir_exists(plugin.plug_dir + "/.git"):
 		return
 
-	var git = GitExecutable.new(ProjectSettings.globalize_path(plugin.plug_dir), logger)
+	var git = _GitExecutable.new(ProjectSettings.globalize_path(plugin.plug_dir), logger)
 	return git.is_up_to_date(plugin)
 
 # Get installed plugin, thread safe
@@ -687,7 +687,7 @@ func _plugging():
 	pass
 """
 
-class GitExecutable extends Reference:
+class _GitExecutable extends Reference:
 	var cwd = ""
 	var logger
 
@@ -829,7 +829,7 @@ class GitExecutable extends Reference:
 			return FAILED if is_commit_behind else OK
 		return FAILED
 
-class ThreadPool extends Reference:
+class _ThreadPool extends Reference:
 	signal all_thread_finished()
 
 	var _threads = []
@@ -922,7 +922,7 @@ class ThreadPool extends Reference:
 				return false
 		return true
 
-class Logger extends Reference:
+class _Logger extends Reference:
 	enum LogLevel {
 		ALL, DEBUG, INFO, WARN, ERROR, NONE
 	}
