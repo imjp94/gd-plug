@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1
+
+- Bugfixes:
+  - Fix [Inner class name conflict with other plugins](https://github.com/imjp94/gd-plug/issues/4)
+- Features:
+  - [Support for headless/server builds](https://github.com/imjp94/gd-plug/pull/1)
+
 ## 0.1.0
 
 Initial release
