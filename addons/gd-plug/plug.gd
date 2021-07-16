@@ -696,11 +696,12 @@ class _GitExecutable extends Reference:
 		logger = p_logger
 
 	func _execute(command, blocking=true, output=[], read_stderr=false):
-		var cmd = "cd %s && %s" % [cwd, command]
+		var cmd = "cd '%s' && %s" % [cwd, command]
 		# NOTE: OS.execute() seems to ignore read_stderr
 		var exit = FAILED
 		match OS.get_name():
 			"Windows":
+				cmd = cmd.replace("\'", "\"") # cmd doesn't accept single-quotes
 				cmd = cmd if read_stderr else "%s 2> nul" % cmd
 				logger.debug("Execute \"%s\"" % cmd)
 				exit = OS.execute("cmd", ["/C", cmd], blocking, output, read_stderr)
@@ -726,9 +727,9 @@ class _GitExecutable extends Reference:
 		var branch = args.get("branch", "")
 		var tag = args.get("tag", "")
 		var commit = args.get("commit", "")
-		var command = "git clone --depth=1 --progress %s %s" % [src, dest]
+		var command = "git clone --depth=1 --progress '%s' '%s'" % [src, dest]
 		if branch or tag:
-			command = "git clone --depth=1 --single-branch --branch %s %s %s" % [branch if branch else tag, src, dest]
+			command = "git clone --depth=1 --single-branch --branch %s '%s' '%s'" % [branch if branch else tag, src, dest]
 		elif commit:
 			return clone_commit(src, dest, commit)
 		var exit = _execute(command, true, output)
@@ -768,7 +769,7 @@ class _GitExecutable extends Reference:
 	func remote_add(name, src):
 		logger.debug("Adding remote %s@%s..." % [name, src])
 		var output = []
-		var exit = _execute("git remote add %s %s" % [name, src], true, output)
+		var exit = _execute("git remote add %s '%s'" % [name, src], true, output)
 		logger.debug("Successfully added remote" if exit == OK else "Failed to add remote")
 		return {"exit": exit, "output": output}
 
