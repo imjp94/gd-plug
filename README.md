@@ -36,7 +36,7 @@ Minimal plugin manager for Godot, inspired by [vim-plug](https://github.com/june
 ## Commands
 
 ```shell
-godot --no-window -s plug.gd {action} {options...}
+godot --headless -s plug.gd {action} {options...}
 ```
 
 - Actions
