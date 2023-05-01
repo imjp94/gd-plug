@@ -4,6 +4,8 @@ Minimal plugin manager for Godot, inspired by [vim-plug](https://github.com/june
 
 ![Demo](screenshots/gd-plug_demo.gif)
 
+> ⚠️ This version is only compatible with **Godot 3.x**, check out [master](https://github.com/imjp94/gd-plug/tree/master) branch for latest version
+
 ## Content
 
 - [Features](#features)
