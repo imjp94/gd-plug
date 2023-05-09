@@ -706,7 +706,7 @@ class _GitExecutable extends RefCounted:
 				cmd = cmd if read_stderr else "%s 2> nul" % cmd
 				logger.debug("Execute \"%s\"" % cmd)
 				exit = OS.execute("cmd", ["/C", cmd], output, read_stderr)
-			"X11", "OSX", "Server":
+			"macOS", "Linux", "FreeBSD", "NetBSD", "OpenBSD", "BSD":
 				cmd if read_stderr else "%s 2>/dev/null" % cmd
 				logger.debug("Execute \"%s\"" % cmd)
 				exit = OS.execute("bash", ["-c", cmd], output, read_stderr)
