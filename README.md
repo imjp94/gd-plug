@@ -149,7 +149,7 @@ godot --no-window -s plug.gd install
 Post update hook can be connected in 3 ways:
 
 - Declare in plug() argument
-  - `plug(src, {"on_update": "post_update"})`
+  - `plug(src, {"on_updated": "post_update"})`
 - Connect to `update` signal
   - `connect("updated", self, "post_update")`
 - Overwriting `_on_updated` function
