@@ -94,6 +94,7 @@ func _idle(delta):
 
 func _finalize():
 	_plug_end()
+	threadpool.stop()
 	logger.info("Finished, elapsed %.3fs" % ((Time.get_ticks_msec() - _start_time) / 1000.0))
 
 func _on_updated(plugin):
@@ -886,7 +887,8 @@ class _ThreadPool extends RefCounted:
 	func _flush_threads():
 		for i in _finished_threads.size():
 			var thread = _finished_threads.pop_front()
-			thread.wait_to_finish()
+			if not thread.is_alive():
+				thread.wait_to_finish()
 
 	func enqueue_task(callable, priority=1):
 		enqueue({"callable": callable, "priority": priority})
@@ -900,12 +902,16 @@ class _ThreadPool extends RefCounted:
 		_flush_tasks()
 		_flush_threads()
 
+	func stop():
+		_tasks.clear()
+		_flush_threads()
+
 	func _get_thread():
 		var thread
 		for i in OS.get_processor_count():
 			var t = _threads[i]
 			if t:
-				if not t.is_active():
+				if not t.is_started():
 					thread = t
 					break
 			else:
