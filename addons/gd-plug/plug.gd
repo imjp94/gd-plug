@@ -430,7 +430,7 @@ func install(plugin):
 		set_installed_plugin(plugin)
 	if plugin.on_updated:
 		if has_method(plugin.on_updated):
-			logger.info("Execute post-update function for %s: %s" % [plugin.name, plugin.do])
+			logger.info("Execute post-update function for %s" % plugin.name)
 			_on_updated(plugin)
 			call(plugin.on_updated, plugin.duplicate())
 			emit_signal("updated", plugin)
