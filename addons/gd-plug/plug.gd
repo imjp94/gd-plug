@@ -149,6 +149,7 @@ func _plug_init():
 
 func _plug_install():
 	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
+	threadpool.active = false
 	logger.info("Installing...")
 	for plugin in _plugged_plugins.values():
 		var installed = plugin.name in _installed_plugins
@@ -178,13 +179,16 @@ func _plug_install():
 
 func _plug_uninstall():
 	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
+	threadpool.active = false
 	logger.info("Uninstalling...")
 	for plugin in _installed_plugins.values():
 		var installed_plugin = get_installed_plugin(plugin.name)
 		threadpool.enqueue_task(uninstall_plugin.bind(installed_plugin), Thread.PRIORITY_LOW)
+	threadpool.active = true
 
 func _plug_clean():
 	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
+	threadpool.active = false
 	logger.info("Cleaning...")
 	var plugged_dir = DirAccess.open(DEFAULT_PLUG_DIR)
 	plugged_dir.include_hidden = true
@@ -197,9 +201,11 @@ func _plug_clean():
 				threadpool.enqueue_task(directory_delete_recursively.bind(plugged_dir.get_current_dir() + "/" + file))
 		file = plugged_dir.get_next()
 	plugged_dir.list_dir_end()
+	threadpool.active = true
 
 func _plug_upgrade():
 	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
+	threadpool.active = false
 	logger.info("Upgrading gd-plug...")
 	plug("imjp94/gd-plug")
 	var gd_plug = _plugged_plugins["gd-plug"]
@@ -211,9 +217,11 @@ func _plug_upgrade():
 		logger.debug("All installation finished! Ready to uninstall removed plugins...")
 	threadpool.connect("all_thread_finished", request_quit)
 	threadpool.enqueue_task(directory_delete_recursively.bind(gd_plug.plug_dir))
+	threadpool.active = true
 
 func _plug_status():
 	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
+	threadpool.active = false
 	logger.info("Installed %d plugin%s" % [_installed_plugins.size(), "s" if _installed_plugins.size() > 1 else ""])
 	var new_plugins = _plugged_plugins.duplicate()
 	var has_checking_plugin = false
@@ -258,6 +266,7 @@ func _plug_status():
 		logger.info("\nOrphan directory, %d found in %s, execute \"clean\" command to remove" % [orphan_dirs.size(), DEFAULT_PLUG_DIR])
 		for dir in orphan_dirs:
 			logger.info("- %s" % dir)
+	threadpool.active = true
 
 	if has_checking_plugin:
 		request_quit()
@@ -849,6 +858,8 @@ class _GitExecutable extends RefCounted:
 class _ThreadPool extends RefCounted:
 	signal all_thread_finished()
 
+	var active = true
+
 	var _threads = []
 	var _finished_threads = []
 	var _mutex = Mutex.new()
@@ -908,13 +919,16 @@ class _ThreadPool extends RefCounted:
 		enqueue({"callable": callable, "priority": priority})
 
 	func enqueue(task):
-		var can_execute = _execute_task(task)
+		var can_execute = false
+		if active:
+			can_execute = _execute_task(task)
 		if not can_execute:
 			_tasks.append(task)
 
 	func process(delta):
-		_flush_tasks()
-		_flush_threads()
+		if active:
+			_flush_tasks()
+			_flush_threads()
 
 	func stop():
 		_tasks.clear()
