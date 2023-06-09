@@ -537,10 +537,24 @@ func directory_delete_recursively(dir_path, args={}):
 						if not silent_test: logger.warn("[TEST] Remove empty directory: %s" % sub_dir.get_current_dir())
 					else:
 						if source.get_file() == ".git":
+							var empty_dir_path = ProjectSettings.globalize_path(source)
+							var exit = FAILED
+							match OS.get_name():
+								"Windows":
+									empty_dir_path = "\"%s\"" % empty_dir_path
+									empty_dir_path = empty_dir_path.replace("/", "\\")
+									var cmd = "rd /s /q %s" % empty_dir_path
+									exit = OS.execute("cmd", ["/C", cmd])
+								"X11", "OSX", "Server":
+									empty_dir_path = "\'%s\'" % empty_dir_path
+									var cmd = "rm -rf %s" % empty_dir_path
+									exit = OS.execute("bash", ["-c", cmd])
 							# Hacks to remove .git, as git pack files stop it from being removed
 							# See https://stackoverflow.com/questions/1213430/how-to-fully-delete-a-git-repository-created-with-init
-							if OS.execute("rm", ["-rf", ProjectSettings.globalize_path(source)]) == OK:
+							if exit == OK:
 								logger.debug("Remove empty directory: %s" % sub_dir.get_current_dir())
+							else:
+								logger.debug("Failed to remove empty directory: %s" % sub_dir.get_current_dir())
 						else:
 							if dir.remove(sub_dir.get_current_dir()) == OK:
 								logger.debug("Remove empty directory: %s" % sub_dir.get_current_dir())
