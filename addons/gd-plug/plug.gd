@@ -871,7 +871,7 @@ class _ThreadPool extends RefCounted:
 			emit_signal("all_thread_finished")
 
 	func _flush_tasks():
-		if not _tasks:
+		if _tasks.size() == 0:
 			return
 
 		var executed = true
