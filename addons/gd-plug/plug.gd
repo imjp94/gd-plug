@@ -176,6 +176,7 @@ func _plug_install():
 		threadpool.connect("all_thread_finished", request_quit)
 		for plugin in removed_plugins:
 			threadpool.enqueue_task(uninstall_plugin.bind(plugin), Thread.PRIORITY_LOW)
+	threadpool.active = true
 
 func _plug_uninstall():
 	assert(_installed_plugins != null, MSG_PLUG_START_ASSERTION)
