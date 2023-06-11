@@ -26,6 +26,8 @@ Minimal plugin manager for Godot, inspired by [vim-plug](https://github.com/june
   - [One script to run them all](addons/gd-plug/plug.gd)
 - Zero learning curve
   - Config file written in GDScript
+- Flexible
+  - Support both commandline and UI(see [gd-plug-ui](https://github.com/imjp94/gd-plug-ui))
 - Version freeze
   - Freeze plugins by branch, tag or commit
 - Reduce remote repository size
@@ -98,6 +100,10 @@ Arguments:
   Download and install [git](https://git-scm.com/downloads)
 
   > git must be set to environment variable
+
+- [gd-plug-ui](https://github.com/imjp94/gd-plug-ui)(optional)
+
+  User interface for gd-plug, not required when working with commandline
 
 ## Getting Started
 
