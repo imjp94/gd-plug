@@ -89,7 +89,7 @@ func _initialize():
 	# NOTE: Do no put anything after this line except request_quit(), as _plug_*() may call request_quit()
 	request_quit()
 
-func _idle(delta):
+func _process(delta):
 	threadpool.process(delta)
 
 func _finalize():
