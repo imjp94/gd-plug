@@ -171,7 +171,9 @@ func _plug_install():
 	if removed_plugins:
 		threadpool.disconnect("all_thread_finished", self, "request_quit")
 		if not threadpool.is_all_thread_finished():
+			threadpool.active = true
 			yield(threadpool, "all_thread_finished")
+			threadpool.active = false
 			logger.debug("All installation finished! Ready to uninstall removed plugins...")
 		threadpool.connect("all_thread_finished", self, "request_quit")
 		for plugin in removed_plugins:
@@ -214,7 +216,9 @@ func _plug_upgrade():
 	threadpool.enqueue_task(self, "install_plugin", gd_plug)
 	threadpool.disconnect("all_thread_finished", self, "request_quit")
 	if not threadpool.is_all_thread_finished():
+		threadpool.active = true
 		yield(threadpool, "all_thread_finished")
+		threadpool.active = false
 		logger.debug("All installation finished! Ready to uninstall removed plugins...")
 	threadpool.connect("all_thread_finished", self, "request_quit")
 	threadpool.enqueue_task(self, "directory_delete_recursively", gd_plug.plug_dir)
@@ -239,7 +243,9 @@ func _plug_status():
 	if has_checking_plugin:
 		logger.info("\n", true)
 		threadpool.disconnect("all_thread_finished", self, "request_quit")
+		threadpool.active = true
 		yield(threadpool, "all_thread_finished")
+		threadpool.active = false
 		threadpool.connect("all_thread_finished", self, "request_quit")
 		logger.debug("Finished checking plugins, ready to proceed")
 	if new_plugins:
