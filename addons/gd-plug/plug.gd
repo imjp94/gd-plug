@@ -3,7 +3,7 @@ extends SceneTree
 
 signal updated(plugin)
 
-const VERSION = "0.1.3"
+const VERSION = "0.1.4"
 const DEFAULT_PLUGIN_URL = "https://git::@github.com/%s.git"
 const DEFAULT_PLUG_DIR = "res://.plugged"
 const DEFAULT_CONFIG_PATH = DEFAULT_PLUG_DIR + "/index.cfg"
