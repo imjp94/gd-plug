@@ -333,7 +333,7 @@ func install_plugin(plugin):
 		logger.info("Installing plugin %s..." % plugin.name)
 		var result = is_plugin_downloaded(plugin)
 		if result != OK:
-			result = downlaod(plugin)
+			result = download(plugin)
 		else:
 			logger.info("Plugin already downloaded")
 
@@ -390,7 +390,7 @@ func update_plugin(plugin, checking=false):
 			var test = !OS.get_environment(ENV_TEST).is_empty()
 			uninstall(get_installed_plugin(plugin.name))
 			directory_delete_recursively(plugin.plug_dir, {"exclude": [DEFAULT_CONFIG_PATH], "test": test})
-			if downlaod(plugin) == OK:
+			if download(plugin) == OK:
 				install(plugin)
 		elif should_pull:
 			logger.info("%s pulling updates from %s..." % [plugin.name, plugin.url])
@@ -405,7 +405,7 @@ func update_plugin(plugin, checking=false):
 func check_plugin(plugin):
 	update_plugin(plugin, true)
 
-func downlaod(plugin):
+func download(plugin):
 	logger.info("Downloading %s from %s..." % [plugin.name, plugin.url])
 	var test = !OS.get_environment(ENV_TEST).is_empty()
 	var global_dest_dir = ProjectSettings.globalize_path(plugin.plug_dir)
