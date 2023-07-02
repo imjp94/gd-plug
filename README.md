@@ -117,7 +117,7 @@ func _plugging():
     pass
 ```
 
-> Or run `init` command: "`godot --no-window -s addons/plug.gd init`"
+> Or run `init` command: "`godot --headless -s addons/plug.gd init`"
 
 Declare plugins in `plug.gd` under `_plugging()`, for example:
 
