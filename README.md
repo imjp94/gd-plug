@@ -150,6 +150,14 @@ Finally, run `install` command in shell
 godot --no-window -s plug.gd install 
 ```
 
+### Installing from private repositories
+
+To install a plugin from a private repository, use the complete Git SSH url instead of the user and repository names:
+
+```
+plug("git@github.com:MyName/repository_name.git")
+```
+
 ## Post Update Hook
 
 Post update hook can be connected in 3 ways:
