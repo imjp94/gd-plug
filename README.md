@@ -75,6 +75,8 @@ or
 
 - Any valid git url
 
+> To install a plugin from a private repository, use the complete Git SSH url instead of the user and repository names: `plug("git@github.com:username/repo.git")`. See [Generating new SSH key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent) and [Adding a new SSH key to your Github account](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account)
+
 Arguments:
 
 - `include`: Array of strings that define what files or directory to include. Only `addons/` will be included if this option omitted. No expression(like wildcard (*)) supported yet.
