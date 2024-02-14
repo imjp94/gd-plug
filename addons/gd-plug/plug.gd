@@ -96,11 +96,11 @@ func _initialize():
 	request_quit()
 
 func show_syntax():
-	print_rich("[color=orange]gd-plug[/color] - Minimal plugin manager for Godot")
-	print("")
-	print_rich("[b]Usage:[/b] godot --headless -s plug.gd action [options...]")
-	print("")
-	print_rich("[color=yellow][b]Actions:[/b][/color]")
+	logger.info("gd-plug - Minimal plugin manager for Godot")
+	logger.info("")
+	logger.info("Usage: godot --headless -s plug.gd action [options...]")
+	logger.info("")
+	logger.info("Actions:")
 	var actions = {
 		"init": "Initialize current project by creating plug.gd at root",
 		"status": "Check the status of plugins(installed, added or removed), execute this command whenever in doubts",
@@ -111,9 +111,9 @@ func show_syntax():
 		"version": "Print current version of gd-plug",
 	}
 	for action_name in actions:
-		print_rich("  [color=green][b]%s:[/b][/color] %s" % [action_name, actions[action_name]])
-	print("")
-	print_rich("[color=yellow][b]Options:[/b][/color]")
+		logger.info("  %s: %s" % [action_name, actions[action_name]])
+	logger.info("")
+	logger.info("Options:")
 	var options = {
 		"production": "Install only plugins not marked as dev, or uninstall already installed dev plugins",
 		"test": "Testing mode, no files will be installed/uninstalled while files to be installed/uninstalled will be printed, mainly used with install or uninstall",
@@ -126,8 +126,8 @@ func show_syntax():
 		"help": "Show this help",
 	}
 	for option_name in options:
-		print_rich("  [color=green][b]%s:[/b][/color] %s" % [option_name, options[option_name]])
-	print("")
+		logger.info("  %s: %s" % [option_name, options[option_name]])
+	logger.info("")
 
 func _process(delta):
 	threadpool.process(delta)
