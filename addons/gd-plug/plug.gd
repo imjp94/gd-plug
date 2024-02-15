@@ -110,8 +110,10 @@ func show_syntax():
 		"upgrade": "Upgrade addons/gd-plug/plug.gd to the latest version",
 		"version": "Print current version of gd-plug",
 	}
+	logger.indent()
 	for action_name in actions:
-		logger.info("  %s: %s" % [action_name, actions[action_name]])
+		logger.info("%s: %s" % [action_name, actions[action_name]])
+	logger.dedent()
 	logger.info("")
 	logger.info("Options:")
 	var options = {
@@ -125,8 +127,10 @@ func show_syntax():
 		"quiet, q, silent": "Disable logging",
 		"help": "Show this help",
 	}
+	logger.indent()
 	for option_name in options:
-		logger.info("  %s: %s" % [option_name, options[option_name]])
+		logger.info("%s: %s" % [option_name, options[option_name]])
+	logger.dedent()
 	logger.info("")
 
 func _process(delta):
@@ -1017,6 +1021,8 @@ class _Logger extends RefCounted:
 	var log_level = LogLevel.INFO
 	var log_format = DEFAULT_LOG_FORMAT_NORMAL
 	var log_time_format = "{year}/{month}/{day} {hour}:{minute}:{second}"
+	var indent_level = 0
+	var is_locked = false
 
 	func debug(msg, raw=false):
 		_log(LogLevel.DEBUG, msg, raw)
@@ -1031,19 +1037,43 @@ class _Logger extends RefCounted:
 		_log(LogLevel.ERROR, msg, raw)
 
 	func _log(level, msg, raw=false):
+		if is_locked:
+			return
+		
+		if typeof(msg) != TYPE_STRING:
+			msg = str(msg)
 		if log_level <= level:
-			if raw:
-				printraw(format_log(level, msg))
-			else:
-				print(format_log(level, msg))
+			match level:
+				LogLevel.WARN:
+					push_warning(format_log(level, msg))
+				LogLevel.ERROR:
+					push_error(format_log(level, msg))
+				_:
+					if raw:
+						printraw(format_log(level, msg))
+					else:
+						print(format_log(level, msg))
 
 	func format_log(level, msg):
 		return log_format.format({
 			"time": log_time_format.format(get_formatted_datatime()),
 			"level": LogLevel.keys()[level],
-			"msg": msg
+			"msg": msg.indent("    ".repeat(indent_level))
 		})
 
+	func indent():
+		indent_level += 1
+	
+	func dedent():
+		indent_level -= 1
+		max(indent_level, 0)
+	
+	func lock():
+		is_locked = true
+	
+	func unlock():
+		is_locked = false
+	
 	func get_formatted_datatime():
 		var datetime = Time.get_datetime_dict_from_system()
 		datetime.year = "%04d" % datetime.year
