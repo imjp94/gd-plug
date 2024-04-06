@@ -162,7 +162,7 @@ func show_config_syntax():
 		"tag": "Name of tag to freeze to",
 		"commit": "Commit hash string to freeze to, must be full length 40 digits commit-hash, for example, 7a642f90d3fb88976dd913051de994e58e838d1a",
 		"dev": "Boolean to mark the plugin as dev or not, plugin marked as dev will not be installed when production command given",
-		"on-updated": "Post update hook, a function name declared in plug.gd that will be called whenever the plugin installed/updated"
+		"on_updated": "Post update hook, a function name declared in plug.gd that will be called whenever the plugin installed/updated"
 	}
 	logger.indent()
 	logger.table_start()
