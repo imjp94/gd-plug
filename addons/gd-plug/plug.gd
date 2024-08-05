@@ -594,10 +594,12 @@ func directory_copy_recursively(from, to, args={}):
 				dest_files += directory_copy_recursively(source, dest, args)
 			else:
 				for include_key in include:
-					if include_key in source:
+					var include_path = DEFAULT_PLUG_DIR + "/" + include_key
+					if include_path in source:
 						var is_excluded = false
 						for exclude_key in exclude:
-							if exclude_key in source:
+							var exclude_path = DEFAULT_PLUG_DIR + "/" + exclude_key
+							if exclude_path in source:
 								is_excluded = true
 								break
 						if not is_excluded:
