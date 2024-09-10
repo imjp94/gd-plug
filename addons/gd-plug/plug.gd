@@ -5,7 +5,7 @@ signal updated(plugin)
 
 const VERSION = "0.2.6"
 const DEFAULT_PLUGIN_URL = "https://git::@github.com/%s.git"
-const DEFAULT_PLUG_DIR = "res://.plugged"
+const DEFAULT_PLUG_DIR = "res://addons/gd-plug/.plugged"
 const DEFAULT_CONFIG_PATH = DEFAULT_PLUG_DIR + "/index.cfg"
 const DEFAULT_USER_PLUG_SCRIPT_PATH = "res://plug.gd"
 const DEFAULT_BASE_PLUG_SCRIPT_PATH = "res://addons/gd-plug/plug.gd"
@@ -575,7 +575,7 @@ func remove_installed_plugin(plugin_name):
 	_mutex.unlock()
 	return result
 
-func directory_copy_recursively(from, to, args={}):
+func directory_copy_recursively(from, to, args={}, from_root = from):
 	var include = args.get("include", [])
 	var exclude = args.get("exclude", [])
 	var test = args.get("test", false)
@@ -589,15 +589,16 @@ func directory_copy_recursively(from, to, args={}):
 		while not file_name.is_empty():
 			var source = dir.get_current_dir() + ("/" if dir.get_current_dir() != "res://" else "") + file_name
 			var dest = to + ("/" if to != "res://" else "") + file_name
+			var include_test_source = source.erase(0, from_root.length())
 			
 			if dir.current_is_dir():
-				dest_files += directory_copy_recursively(source, dest, args)
+				dest_files += directory_copy_recursively(source, dest, args, from_root)
 			else:
 				for include_key in include:
-					if include_key in source:
+					if include_key in include_test_source:
 						var is_excluded = false
 						for exclude_key in exclude:
-							if exclude_key in source:
+							if exclude_key in include_test_source:
 								is_excluded = true
 								break
 						if not is_excluded:
