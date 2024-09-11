@@ -5,7 +5,7 @@ signal updated(plugin)
 
 const VERSION = "0.2.6"
 const DEFAULT_PLUGIN_URL = "https://git::@github.com/%s.git"
-const DEFAULT_PLUG_DIR = "res://addons/gd-plug/.plugged"
+const DEFAULT_PLUG_DIR = "res://.plugged"
 const DEFAULT_CONFIG_PATH = DEFAULT_PLUG_DIR + "/index.cfg"
 const DEFAULT_USER_PLUG_SCRIPT_PATH = "res://plug.gd"
 const DEFAULT_BASE_PLUG_SCRIPT_PATH = "res://addons/gd-plug/plug.gd"
