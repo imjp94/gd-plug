@@ -591,31 +591,37 @@ func directory_copy_recursively(from, to, args={}, from_root = from):
 			var dest = to + ("/" if to != "res://" else "") + file_name
 			var include_test_source = source.erase(0, from_root.length())
 			
-			if dir.current_is_dir():
-				dest_files += directory_copy_recursively(source, dest, args, from_root)
-			else:
-				for include_key in include:
-					if include_key in include_test_source:
-						var is_excluded = false
-						for exclude_key in exclude:
-							if exclude_key in include_test_source:
-								is_excluded = true
-								break
-						if not is_excluded:
-							if test:
-								if not silent_test: logger.warn("[TEST] Writing to %s" % dest)
-							else:
-								dir.make_dir_recursive(to)
-								if dir.copy(source, dest) == OK:
-									logger.debug("Copy from %s to %s" % [source, dest])
-							dest_files.append(dest)
-						break
+			if !_test_path_includes_any_key(exclude, include_test_source):
+				if dir.current_is_dir():
+					dest_files += directory_copy_recursively(source, dest, args, from_root)
+				else:
+					if _test_path_includes_any_key(include, include_test_source):
+						if test:
+							if !silent_test:
+								logger.warn("[TEST] Writing to %s" % dest)
+						else:
+							dir.make_dir_recursive(to)
+							if dir.copy(source, dest) == OK:
+								logger.debug("Copy from %s to %s" % [source, dest])
+						dest_files.append(dest)
 			file_name = dir.get_next()
 		dir.list_dir_end()
 	else:
 		logger.error("Failed to access path: %s" % from)
 	
 	return dest_files
+
+func _test_path_includes_any_key(keys, path):
+	for key in keys:
+		if key.begins_with("res://"):
+			key = key.erase(0, "res:/".length())
+			if path.begins_with(key):
+				return true
+			continue
+
+		if key in path:
+			return true
+	return false
 
 func directory_delete_recursively(dir_path, args={}):
 	var remove_empty_directory = args.get("remove_empty_directory", true)
