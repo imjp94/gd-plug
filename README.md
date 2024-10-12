@@ -256,6 +256,7 @@ func _on_plugin_updated(plugin):
 ## Known Limitations
 
 - Godot always show errors from plugin repositories in `./plugged` even with `.gdignore` (See [#32](https://github.com/imjp94/gd-plug/issues/32))
+  - This can be worked around by placing the `.plugged` folder within `addons`, e.g. `addons/gd-plug/.plugged`
 - Sometimes random .import files will be unable to remove, while the reason behind it still remains unknown.
   - Workaround: Read output for those .import files that failed to remove, and manually delete them.
 - `autoload` script references in project setting are not cleared as plugin uninstalled.
