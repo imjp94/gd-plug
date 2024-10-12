@@ -98,7 +98,7 @@ func _initialize():
 				logger.error("Unknown command %s" % args[0])
 				show_syntax()
 	# NOTE: Do no put anything after this line except request_quit(), as _plug_*() may call request_quit()
-	request_quit()
+	request_quit(0)
 
 func show_syntax():
 	logger.info("gd-plug - Minimal plugin manager for Godot")
