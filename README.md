@@ -131,7 +131,7 @@ func _plugging():
 ```
 
 > [!TIP]
-> Or run `init` command: `godot --headless -s addons/plug.gd init`
+> Or run `init` command: `godot --headless -s addons/gd-plug/plug.gd init`
 
 2. Declare plugins in `plug.gd` under `_plugging()`, for example:
 
