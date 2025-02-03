@@ -173,7 +173,7 @@ Post update hook can be connected in 3 ways:
 - Connect to `update` signal
   - `connect("updated", self, "post_update")`
 - Overwriting `_on_updated` function
-  - `func _on_update(plugin)`
+  - `func _on_updated(plugin)`
 
 Post update hook always returned with one argument - dictionary that store information about the plugin
 

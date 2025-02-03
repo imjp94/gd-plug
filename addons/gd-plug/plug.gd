@@ -527,12 +527,15 @@ func install(plugin):
 	logger.info("Installed %d file%s for %s" % [dest_files.size(), "s" if dest_files.size() > 1 else "", plugin.name])
 	if plugin.name != "gd-plug":
 		set_installed_plugin(plugin)
+	
+	logger.debug("Execute \"_on_updated\" function for %s" % plugin.name)
+	_on_updated(plugin.duplicate())
 	if plugin.on_updated:
 		if has_method(plugin.on_updated):
-			logger.info("Execute post-update function for %s" % plugin.name)
-			_on_updated(plugin)
+			logger.debug("Execute post-update function \"%s\" for %s" % [plugin.on_updated, plugin.name])
 			call(plugin.on_updated, plugin.duplicate())
-			emit_signal("updated", plugin)
+	logger.debug("Emit \"updated\" signal for %s" % plugin.name)
+	emit_signal("updated", plugin.duplicate())
 	return OK
 
 func uninstall(plugin):
