@@ -5,7 +5,7 @@ signal updated(plugin)
 
 const VERSION = "0.2.6"
 const DEFAULT_PLUGIN_URL = "https://git::@github.com/%s.git"
-const DEFAULT_PLUG_DIR = "res://.plugged"
+const DEFAULT_PLUG_DIR = "user://.plugged"
 const DEFAULT_CONFIG_PATH = DEFAULT_PLUG_DIR + "/index.cfg"
 const DEFAULT_USER_PLUG_SCRIPT_PATH = "res://plug.gd"
 const DEFAULT_BASE_PLUG_SCRIPT_PATH = "res://addons/gd-plug/plug.gd"
@@ -19,6 +19,8 @@ const ENV_KEEP_IMPORT_RESOURCE_FILE = "keep_import_resource_file"
 const MSG_PLUG_START_ASSERTION = "_plug_start() must be called first"
 
 var project_dir
+var plug_dir_root
+
 var installation_config = ConfigFile.new()
 var logger = _Logger.new()
 
@@ -34,6 +36,10 @@ var threadpool = _ThreadPool.new(logger)
 func _init():
 	threadpool.connect("all_thread_finished", request_quit)
 	project_dir = DirAccess.open("res://")
+	if DEFAULT_PLUG_DIR.begins_with("user://"):
+		plug_dir_root = DirAccess.open("user://")
+	else:
+		plug_dir_root = project_dir
 
 func _initialize():
 	var args = OS.get_cmdline_args()
@@ -196,8 +202,8 @@ func request_quit(exit_code=-1):
 # Index installed plugins, or create directory "plugged" if not exists
 func _plug_start():
 	logger.debug("Plug start")
-	if not project_dir.dir_exists(DEFAULT_PLUG_DIR):
-		if project_dir.make_dir(ProjectSettings.globalize_path(DEFAULT_PLUG_DIR)) == OK:
+	if not plug_dir_root.dir_exists(DEFAULT_PLUG_DIR):
+		if plug_dir_root.make_dir(ProjectSettings.globalize_path(DEFAULT_PLUG_DIR)) == OK:
 			logger.debug("Make dir %s for plugin installation")
 	if installation_config.load(DEFAULT_CONFIG_PATH) == OK:
 		logger.debug("Installation config loaded")
@@ -277,6 +283,8 @@ func _plug_clean():
 	threadpool.active = false
 	logger.info("Cleaning...")
 	var plugged_dir = DirAccess.open(DEFAULT_PLUG_DIR)
+	if !plugged_dir:
+		logger.error("Could not open default plugged directory: '%s'\n%s" % [DEFAULT_PLUG_DIR, error_string(DirAccess.get_open_error())])
 	plugged_dir.include_hidden = true
 	plugged_dir.list_dir_begin() # TODOGODOT4 fill missing arguments https://github.com/godotengine/godot/pull/40547
 	var file = plugged_dir.get_next()
@@ -492,9 +500,10 @@ func download(plugin):
 	logger.info("Downloading %s from %s..." % [plugin.name, plugin.url])
 	var test = !OS.get_environment(ENV_TEST).is_empty()
 	var global_dest_dir = ProjectSettings.globalize_path(plugin.plug_dir)
-	if project_dir.dir_exists(plugin.plug_dir):
+	var plugged_dir = project_dir
+	if plug_dir_root.dir_exists(plugin.plug_dir):
 		directory_delete_recursively(plugin.plug_dir)
-	project_dir.make_dir(plugin.plug_dir)
+	plug_dir_root.make_dir(plugin.plug_dir)
 	var result = _GitExecutable.new(global_dest_dir, logger).clone(plugin.url, global_dest_dir, {"branch": plugin.branch, "tag": plugin.tag, "commit": plugin.commit})
 	if result.exit == OK:
 		logger.info("Successfully download %s" % [plugin.name])
@@ -583,17 +592,22 @@ func directory_copy_recursively(from, to, args={}):
 	var exclude = args.get("exclude", [])
 	var test = args.get("test", false)
 	var silent_test = args.get("silent_test", false)
-	var dir = DirAccess.open(from)
-	dir.include_hidden = true
+	var from_dir = DirAccess.open(from)
+	if !from_dir:
+		logger.error("Failed to open dir %s, %s" % [from, error_string(DirAccess.get_open_error())])
+	var to_dir = DirAccess.open("res://")
+	if !to_dir:
+		logger.error("Failed to open dir %s, %s" % [to, error_string(DirAccess.get_open_error())])
+	from_dir.include_hidden = true
 	var dest_files = []
-	if dir.get_open_error() == OK:
-		dir.list_dir_begin() # TODOGODOT4 fill missing arguments https://github.com/godotengine/godot/pull/40547
-		var file_name = dir.get_next()
+	if from_dir.get_open_error() == OK:
+		from_dir.list_dir_begin() # TODOGODOT4 fill missing arguments https://github.com/godotengine/godot/pull/40547
+		var file_name = from_dir.get_next()
 		while not file_name.is_empty():
-			var source = dir.get_current_dir() + ("/" if dir.get_current_dir() != "res://" else "") + file_name
+			var source = from_dir.get_current_dir() + ("/" if from_dir.get_current_dir() != "res://" else "") + file_name
 			var dest = to + ("/" if to != "res://" else "") + file_name
 			
-			if dir.current_is_dir():
+			if from_dir.current_is_dir():
 				dest_files += directory_copy_recursively(source, dest, args)
 			else:
 				for include_key in include:
@@ -607,13 +621,13 @@ func directory_copy_recursively(from, to, args={}):
 							if test:
 								if not silent_test: logger.warn("[TEST] Writing to %s" % dest)
 							else:
-								dir.make_dir_recursive(to)
-								if dir.copy(source, dest) == OK:
+								to_dir.make_dir_recursive(to)
+								if to_dir.copy(source, dest) == OK:
 									logger.debug("Copy from %s to %s" % [source, dest])
 							dest_files.append(dest)
 						break
-			file_name = dir.get_next()
-		dir.list_dir_end()
+			file_name = from_dir.get_next()
+		from_dir.list_dir_end()
 	else:
 		logger.error("Failed to access path: %s" % from)
 	
@@ -625,6 +639,8 @@ func directory_delete_recursively(dir_path, args={}):
 	var test = args.get("test", false)
 	var silent_test = args.get("silent_test", false)
 	var dir = DirAccess.open(dir_path)
+	if !dir:
+		logger.error("Open directory %s failed with %s" % [dir_path, error_string(DirAccess.get_open_error())])
 	dir.include_hidden = true
 	if dir.get_open_error() == OK:
 		dir.list_dir_begin() # TODOGODOT4 fill missing arguments https://github.com/godotengine/godot/pull/40547
@@ -813,7 +829,7 @@ class _GitExecutable extends RefCounted:
 		cwd = p_cwd
 		logger = p_logger
 
-	func _execute(command, output=[], read_stderr=false):
+	func _execute(command, output=[], read_stderr=true):
 		var cmd = "cd '%s' && %s" % [cwd, command]
 		# NOTE: OS.execute() seems to ignore read_stderr
 		var exit = FAILED
