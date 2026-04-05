@@ -194,6 +194,19 @@ What should be added to version control system?
 - `plug.gd`: Dependency config file
 - `addons/gd-plug/plug.gd`: gd-plug's core
 
+> It's recommended to add `.gitignore` to track/untrack files, see [/.gitignore](.gitignore).
+
+```md
+# gd-plug
+.plugged/
+
+# Godot addons - ignore most, but keep essential ones tracked
+addons/*
+!addons/gd-plug/
+# Add your custom addons below to keep them in git
+#!addons/my-custom-addon/
+```
+
 ## More Examples
 
 For most of the case, a plugin can be "plugged" without any extra configuration, as by default gd-plug will extract whatever located in plugin's `/addons` directory and install to current project's `/addons` directory.

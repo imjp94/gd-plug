@@ -15,3 +15,9 @@ data_*/
 
 # gd-plug
 .plugged/
+
+# Godot addons - ignore most, but keep essential ones tracked
+addons/*
+!addons/gd-plug/
+# Add your custom addons below to keep them in git
+#!addons/my-custom-addon/
