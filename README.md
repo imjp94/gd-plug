@@ -184,20 +184,19 @@ func post_update(plugin):
 
 ## Version Control
 
-It's highly recommended to use `.gitignore` to untrack files that are managed by `gd-plug`.
+What can be ignored from version control system?
 
-### What can be ignored?
+- `/.plugged`: Plugins' git repo are cloned to this directory
+- `/addons`: Based on preference, but now dependencies can be safely ignored since it will be managed by gd-plug
 
-- `/.plugged`: Directory where plugins are cloned.
-- `/addons`: Most plugin dependencies here can be safely ignored as they are managed by `gd-plug`. This helps keep your repository size small.
+What should be added to version control system?
 
-#### The Case for Exceptions
-While you generally want to ignore downloaded addons, you must make an exception for **`gd-plug` itself** (`addons/gd-plug/`) so that your project remains functional for others who clone it. You might also want to track **custom addons** that you are developing locally.
+- `plug.gd`: Dependency config file
+- `addons/gd-plug/plug.gd`: gd-plug's core
 
-This can be done by using the `!` character in your `.gitignore` to specifically "un-ignore" a folder. For example, `!addons/my-custom-addon/` will ensure that specific folder is still tracked by git even when `addons/` is ignored.
+> It's recommended to add `.gitignore` to track/untrack files, see [/.gitignore](.gitignore).
 
-Example `.gitignore`:
-```gitignore
+```md
 # gd-plug
 .plugged/
 
@@ -207,11 +206,6 @@ addons/*
 # Add your custom addons below to keep them in git
 #!addons/my-custom-addon/
 ```
-
-### What should be added?
-
-- `plug.gd`: Dependency config file
-- `addons/gd-plug/plug.gd`: gd-plug's core
 
 ## More Examples
 
