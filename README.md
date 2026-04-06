@@ -248,6 +248,7 @@ func _plugging():
     # Source other than github
     plug("https://gitlab.com/Xecestel/sound-manager") # Gitlab
     plug("file:///D/Godot/local-project/.git") # Local git repo
+    plug("../local-project/.git") # Local git repo using a relative path (identified by initial ./ or ../)
 
     connect("updated", "_on_plugin_updated")
 
