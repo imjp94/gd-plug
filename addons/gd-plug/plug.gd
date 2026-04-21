@@ -343,7 +343,7 @@ func _plug_status():
 			logger.info("- %s removed" % plugin.name)
 	var plug_directory = DirAccess.open(DEFAULT_PLUG_DIR)
 	var orphan_dirs = []
-	if plug_directory.get_open_error() == OK:
+	if DirAccess.get_open_error() == OK:
 		plug_directory.list_dir_begin() # TODOGODOT4 fill missing arguments https://github.com/godotengine/godot/pull/40547
 		var file = plug_directory.get_next()
 		while not file.is_empty():
@@ -586,7 +586,7 @@ func directory_copy_recursively(from, to, args={}):
 	var dir = DirAccess.open(from)
 	dir.include_hidden = true
 	var dest_files = []
-	if dir.get_open_error() == OK:
+	if DirAccess.get_open_error() == OK:
 		dir.list_dir_begin() # TODOGODOT4 fill missing arguments https://github.com/godotengine/godot/pull/40547
 		var file_name = dir.get_next()
 		while not file_name.is_empty():
@@ -626,7 +626,7 @@ func directory_delete_recursively(dir_path, args={}):
 	var silent_test = args.get("silent_test", false)
 	var dir = DirAccess.open(dir_path)
 	dir.include_hidden = true
-	if dir.get_open_error() == OK:
+	if DirAccess.get_open_error() == OK:
 		dir.list_dir_begin() # TODOGODOT4 fill missing arguments https://github.com/godotengine/godot/pull/40547
 		var file_name = dir.get_next()
 		while not file_name.is_empty():
@@ -718,12 +718,12 @@ func directory_remove_batch(files, args={}):
 			if dir.remove(dir.get_current_dir()) == OK:
 				logger.debug("Remove empty directory: %s" % dir.get_current_dir())
 		# Dumb method to clean empty ancestor directories
-		logger.debug("Removing emoty ancestor directory for %s..." % dir.get_current_dir())
+		logger.debug("Removing empty ancestor directory for %s..." % dir.get_current_dir())
 		var current_dir = dir.get_current_dir()
 		for i in slash_count:
 			current_dir = current_dir.get_base_dir()
 			var d = DirAccess.open(current_dir)
-			if d.get_open_error() == OK:
+			if DirAccess.get_open_error() == OK:
 				if test:
 					if not silent_test: logger.warn("[TEST] Remove empty ancestor directory: %s" % d.get_current_dir())
 				else:
