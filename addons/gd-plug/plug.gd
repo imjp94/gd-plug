@@ -374,6 +374,8 @@ func plug(repo, args={}):
 	plugin.url = ""
 	if ":" in repo:
 		plugin.url = repo
+	elif repo.begins_with("../") or repo.begins_with("./"):
+		plugin.url = "../../" + repo
 	elif repo.find("/") == repo.rfind("/"):
 		plugin.url = DEFAULT_PLUGIN_URL % repo
 	else:
@@ -850,7 +852,7 @@ class _GitExecutable extends RefCounted:
 			command = "git clone --depth=1 --single-branch --branch %s '%s' '%s'" % [branch if branch else tag, src, dest]
 		elif commit:
 			return clone_commit(src, dest, commit)
-		var exit = _execute(command, output)
+		var exit = _execute(command, output, true)
 		logger.debug("Successfully cloned from %s" % src if exit == OK else "Failed to clone from %s" % src)
 		return {"exit": exit, "output": output}
 
