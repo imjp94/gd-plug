@@ -162,7 +162,8 @@ func show_config_syntax():
 		"tag": "Name of tag to freeze to",
 		"commit": "Commit hash string to freeze to, must be full length 40 digits commit-hash, for example, 7a642f90d3fb88976dd913051de994e58e838d1a",
 		"dev": "Boolean to mark the plugin as dev or not, plugin marked as dev will not be installed when production command given",
-		"on_updated": "Post update hook, a function name declared in plug.gd that will be called whenever the plugin installed/updated"
+		"on_updated": "Post update hook, a function name declared in plug.gd that will be called whenever the plugin installed/updated",
+		"on_updated_callable": "Just like on_updated, but takes a callable instead of a string"
 	}
 	logger.indent()
 	logger.table_start()
@@ -400,6 +401,9 @@ func plug(repo, args={}):
 	is_valid = is_valid and validate_var_type(plugin, "dev", TYPE_BOOL, "Boolean")
 	plugin.on_updated = args.get("on_updated", "")
 	is_valid = is_valid and validate_var_type(plugin, "on_updated", TYPE_STRING, "String")
+	plugin.on_updated_callable = args.get("on_updated_callable", null)
+	if plugin.on_updated_callable:
+		is_valid = is_valid and validate_var_type(plugin, "on_updated_callable", TYPE_CALLABLE, "Callable")
 	plugin.install_root = args.get("install_root", "")
 	is_valid = is_valid and validate_var_type(plugin, "install_root", TYPE_STRING, "String")
 
@@ -495,7 +499,13 @@ func download(plugin):
 	if project_dir.dir_exists(plugin.plug_dir):
 		directory_delete_recursively(plugin.plug_dir)
 	project_dir.make_dir(plugin.plug_dir)
-	var result = _GitExecutable.new(global_dest_dir, logger).clone(plugin.url, global_dest_dir, {"branch": plugin.branch, "tag": plugin.tag, "commit": plugin.commit})
+	var result = OK
+	
+	var exec = _GitExecutable.new(global_dest_dir, logger)
+	if plugin.url.ends_with(".zip"):
+		result = exec.download_zip(plugin.url, global_dest_dir)
+	else:
+		result = exec.clone(plugin.url, global_dest_dir, {"branch": plugin.branch, "tag": plugin.tag, "commit": plugin.commit})
 	if result.exit == OK:
 		logger.info("Successfully download %s" % [plugin.name])
 	else:
@@ -534,6 +544,9 @@ func install(plugin):
 		if has_method(plugin.on_updated):
 			logger.debug("Execute post-update function \"%s\" for %s" % [plugin.on_updated, plugin.name])
 			call(plugin.on_updated, plugin.duplicate())
+	if plugin.on_updated_callable:
+		logger.debug("Execute post-update callable \"%s\" for %s" % [str(plugin.on_updated_callable), plugin.name])
+		plugin.on_updated_callable.call(plugin.duplicate()) # will be a no-op cb if undefined
 	logger.debug("Emit \"updated\" signal for %s" % plugin.name)
 	emit_signal("updated", plugin.duplicate())
 	return OK
@@ -784,7 +797,10 @@ func compare_plugins(p1, p2):
 
 func get_plugin_name_from_repo(repo):
 	repo = repo.replace(".git", "").trim_suffix("/")
-	return repo.get_file()
+	var file = repo.get_file()
+	if file.ends_with(".zip"):
+		file = file.trim_suffix(".zip")
+	return file
 
 func validate_var_type(obj, var_name, type, type_string):
 	var value = obj.get(var_name)
@@ -947,6 +963,48 @@ class _GitExecutable extends RefCounted:
 			var is_commit_behind = !!ahead_behind[1] if ahead_behind.size() == 2 else false
 			return FAILED if is_commit_behind else OK
 		return FAILED
+	
+	func download_zip(url, dest): # url = zip file url, dest = folder to extract it into (folder name will match zip file name)
+		# not really a git command, but kind of need this infra to run curl
+		logger.debug("Downloading...")
+
+		var url_parts = url.split("/")
+		url_parts.reverse()
+		var dest_file = dest + "/" + url_parts[0]
+		var dest_res = ProjectSettings.localize_path(dest)
+		var dest_file_res = ProjectSettings.localize_path(dest_file)
+		
+		var output = []
+		var cmd = "curl -L " + url + " -o " + dest_file.trim_prefix("res://")
+		logger.debug("curl cmd: " + cmd)
+		var exit = _execute(cmd, output)
+		if exit != OK:
+			DirAccess.remove_absolute(dest_file_res)
+			return {"exit": exit, "output": output}
+		var reader = ZIPReader.new()
+
+		logger.debug("dest folder: " + dest_res)
+		DirAccess.remove_absolute(dest_res)
+		DirAccess.make_dir_absolute(dest_res)
+		logger.debug("opening zip file: " + dest_file_res)
+		reader.open(dest_file_res)
+		var root_dir = DirAccess.open(dest_res)
+		var files = reader.get_files()
+		for file_path in files:
+			if file_path.ends_with("/"):
+				root_dir.make_dir_recursive(file_path)
+				continue
+			root_dir.make_dir_recursive(root_dir.get_current_dir().path_join(file_path).get_base_dir())
+			var file = FileAccess.open(root_dir.get_current_dir().path_join(file_path), FileAccess.WRITE)
+			var buffer = reader.read_file(file_path)
+			file.store_buffer(buffer)
+
+		reader.close()
+		DirAccess.remove_absolute(dest_file_res)
+		return {"exit": 0, "output": output}
+
+
+		
 
 class _ThreadPool extends RefCounted:
 	signal all_thread_finished()
